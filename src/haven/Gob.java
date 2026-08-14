@@ -544,6 +544,37 @@ public class Gob implements RenderTree.Node, Sprite.Owner, Skeleton.ModOwner, Eq
 	this(glob, c, -1);
     }
 
+    /* Is the skybox option on at all? Decides whether MapView attaches the
+     * sky palette and whether this gob wears the sky cube.
+     *
+     * The null check is real: OptWnd.enableSkyboxCheckBox is a static field
+     * assigned only in the OptWnd constructor. Gob's existing use is reached
+     * only after isMe resolves, but MapView calls this from the first
+     * frame. */
+    public static boolean skyenabled() {
+	return((OptWnd.enableSkyboxCheckBox != null) && OptWnd.enableSkyboxCheckBox.a);
+    }
+
+    /* Is sky actually being drawn right now? The skybox overlay's own gate:
+     * inside a cave or a cabin there is no sky to show, so the cube comes off.
+     *
+     * GameUI.backgroundSong cannot be null: GameUI.java:123 initialises it
+     * to "" and only string literals are ever assigned to it. */
+    public static boolean skyvisible() {
+	return(skyenabled()
+	       && !(GameUI.backgroundSong.equals("cabin") || GameUI.backgroundSong.equals("cave")));
+    }
+
+    /* Drop the skybox overlay so the next tick rebuilds it. Needed because
+     * the style and quality modes compile to different shader programs, so
+     * the sprite cannot be reconfigured in place. */
+    public void reloadSkybox() {
+	if(skyboxOverlay != null) {
+	    removeOl(skyboxOverlay);
+	    skyboxOverlay = null;
+	}
+    }
+
     public void ctick(double dt) {
 	for(GAttrib a : attr.values()){
 	    a.ctick(dt);
@@ -573,12 +604,12 @@ public class Gob implements RenderTree.Node, Sprite.Owner, Skeleton.ModOwner, Eq
 	if (isMe != null) {
 		setCustomPlayerName();
 		playPlayerAlarm();
-		if (OptWnd.enableSkyboxCheckBox.a && !(GameUI.backgroundSong.equals("cabin") || GameUI.backgroundSong.equals("cave")) && skyboxOverlay == null && isMe) {
+		if (skyvisible() && skyboxOverlay == null && isMe) {
 			skyboxOverlay = new Overlay(this, new SkyBoxSprite(this, null));
 			synchronized (ols) {
 				addol(skyboxOverlay);
 			}
-		} else if (!OptWnd.enableSkyboxCheckBox.a || (GameUI.backgroundSong.equals("cabin") || GameUI.backgroundSong.equals("cave"))) {
+		} else if (!skyvisible()) {
 			if (skyboxOverlay != null) {
 				removeOl(skyboxOverlay);
 				skyboxOverlay = null;

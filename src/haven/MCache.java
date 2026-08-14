@@ -439,7 +439,15 @@ public class MCache implements MapSource {
 		fo.rebuild();
 		try {
 			checkTiles();
-		} catch (Exception ignored) {}
+		} catch (Exception ignored) {
+			/* Not as harmless as it looks. Loading extends
+			 * RuntimeException, so a tile that is not in yet aborts the
+			 * scan partway and leaves the PREVIOUS verdict standing --
+			 * and this is the only caller of checkTiles, so that verdict
+			 * holds until some other cut invalidates. That is how the sky
+			 * can stay switched off long after the player has walked away
+			 * from the cave that switched it off. */
+		}
 	    }
 
 	    public void dispose() {
