@@ -301,7 +301,11 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	public Random mkrandoom() {return(new Random());}
 	public Resource getres() {return(res);}
 
-	public BufferedImage rendertt(boolean withpg) {
+	/* `stroke` desligado é para quem desenha sobre um fundo opaco próprio: o
+	 * contorno custa de 1 a 6 ms por reconstrução e é 97% do custo total,
+	 * contra 0,05 a 0,35 ms sem ele. Quem flutua sobre o mundo precisa dele,
+	 * porque o corpo das janelas do cliente é translúcido. */
+	public BufferedImage rendertt(boolean withpg, int width, boolean stroke) {
 	    String tt = name();
 	    KeyMatch key = bind.key();
 	    int pos = -1;
@@ -312,17 +316,23 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 		tt = tt.substring(0, pos) + "$b{$col[255,128,0]{" + tt.charAt(pos) + "}}" + tt.substring(pos + 1);
 	    else if(key != KeyMatch.nil)
 		tt += " [$b{$col[255,128,0]{" + key.longname() + "}}]";
-	    BufferedImage ret = PUtils.strokeImg(PUtils.strokeImg(ttfnd.render(tt, UI.scale(300)).img));
+	    BufferedImage ret = ttfnd.render(tt, width).img;
+	    if(stroke)
+		ret = PUtils.strokeImg(PUtils.strokeImg(ret));
 	    if(withpg) {
 		List<ItemInfo> info = new ArrayList<>(info());
 		info.removeIf(el -> el instanceof ItemInfo.Name);
 		if(!info.isEmpty()) {
-		    BufferedImage longtip = ItemInfo.longtip(info);
+		    BufferedImage longtip = ItemInfo.longtip(info, width, stroke);
 		    if(longtip != null)
 			ret = ItemInfo.catimgs(0, ret, longtip);
 		}
 	    }
 	    return(ret);
+	}
+
+	public BufferedImage rendertt(boolean withpg) {
+	    return(rendertt(withpg, UI.scale(300), true));
 	}
 
 	public static class FactMaker extends Resource.PublishedCode.Instancer.Chain<Factory> {

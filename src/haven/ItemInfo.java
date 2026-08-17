@@ -451,9 +451,18 @@ public abstract class ItemInfo {
 	}
 
     public static BufferedImage longtip(List<ItemInfo> info) {
+	return(longtip(info, 0, true));
+    }
+
+    /* `width` 0 é o comportamento de sempre: sem largura, ItemInfo.Pagina.layout
+     * quebra a descrição em max(200 escalados, largura da linha de insumos).
+     * Passando uma largura, a descrição reflui nela -- que é o que a coluna 3
+     * precisa para acompanhar o resize. */
+    public static BufferedImage longtip(List<ItemInfo> info, int width, boolean stroke) {
 	if(info.isEmpty())
 	    return(null);
 	Layout l = new Layout(info.get(0).owner);
+	l.width = width;
 	for(ItemInfo ii : info) {
 	    if(ii instanceof Tip) {
 		Tip tip = (Tip)ii;
@@ -463,7 +472,9 @@ public abstract class ItemInfo {
 	if(l.tips.size() < 1)
 	    return(null);
 	BufferedImage ret = l.render();
-	return((ret == null) ? null : PUtils.strokeImg(ret));
+	if((ret != null) && stroke)
+	    ret = PUtils.strokeImg(ret);
+	return(ret);
     }
 
     public static BufferedImage shorttip(List<ItemInfo> info) {
