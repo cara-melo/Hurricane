@@ -91,6 +91,13 @@ public class MenuSearchLogic {
 		}
 	    } catch(Loading l) {
 		complete = false;
+	    } catch(RuntimeException e) {
+		/* Recurso quebrado, não recurso atrasado: LoadFailedException
+		 * não descende de Loading, e daqui sobe até o tick, que não
+		 * pega nada e congela a UI inteira. Descarta esta folha sem
+		 * marcar incompleta -- um recurso quebrado não conserta
+		 * sozinho, e remarcar faria a árvore ser remontada a cada
+		 * tick para sempre. */
 	    }
 	}
 	List<Node<T>> roots = new ArrayList<>();
