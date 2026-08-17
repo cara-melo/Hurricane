@@ -301,11 +301,22 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	public Random mkrandoom() {return(new Random());}
 	public Resource getres() {return(res);}
 
-	/* `stroke` desligado é para quem desenha sobre um fundo opaco próprio: o
+	public BufferedImage rendertt(boolean withpg, int width, boolean stroke) {
+	    return(rendertt(withpg, width, width, stroke));
+	}
+
+	/* Título e corpo têm larguras separadas porque sempre tiveram: o tooltip
+	 * de sempre quebra o título em 300 escalados e passa 0 para o corpo, e 0
+	 * faz ItemInfo.Pagina.layout usar max(200 escalados, largura da linha de
+	 * insumos). Juntar as duas numa só encolhe ou alarga a descrição de toda
+	 * receita do cliente. Quem reflui de verdade -- a coluna 3 da busca --
+	 * passa a mesma largura nas duas.
+	 *
+	 * `stroke` desligado é para quem desenha sobre um fundo opaco próprio: o
 	 * contorno custa de 1 a 6 ms por reconstrução e é 97% do custo total,
 	 * contra 0,05 a 0,35 ms sem ele. Quem flutua sobre o mundo precisa dele,
 	 * porque o corpo das janelas do cliente é translúcido. */
-	public BufferedImage rendertt(boolean withpg, int width, boolean stroke) {
+	public BufferedImage rendertt(boolean withpg, int titlew, int bodyw, boolean stroke) {
 	    String tt = name();
 	    KeyMatch key = bind.key();
 	    int pos = -1;
@@ -316,14 +327,14 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 		tt = tt.substring(0, pos) + "$b{$col[255,128,0]{" + tt.charAt(pos) + "}}" + tt.substring(pos + 1);
 	    else if(key != KeyMatch.nil)
 		tt += " [$b{$col[255,128,0]{" + key.longname() + "}}]";
-	    BufferedImage ret = ttfnd.render(tt, width).img;
+	    BufferedImage ret = ttfnd.render(tt, titlew).img;
 	    if(stroke)
 		ret = PUtils.strokeImg(PUtils.strokeImg(ret));
 	    if(withpg) {
 		List<ItemInfo> info = new ArrayList<>(info());
 		info.removeIf(el -> el instanceof ItemInfo.Name);
 		if(!info.isEmpty()) {
-		    BufferedImage longtip = ItemInfo.longtip(info, width, stroke);
+		    BufferedImage longtip = ItemInfo.longtip(info, bodyw, stroke);
 		    if(longtip != null)
 			ret = ItemInfo.catimgs(0, ret, longtip);
 		}
@@ -332,7 +343,7 @@ public class MenuGrid extends Widget implements KeyBinding.Bindable {
 	}
 
 	public BufferedImage rendertt(boolean withpg) {
-	    return(rendertt(withpg, UI.scale(300), true));
+	    return(rendertt(withpg, UI.scale(300), 0, true));
 	}
 
 	public static class FactMaker extends Resource.PublishedCode.Instancer.Chain<Factory> {

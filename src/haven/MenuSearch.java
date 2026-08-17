@@ -76,6 +76,7 @@ public abstract class MenuSearch extends Window {
     protected List<Result> filtered = Collections.emptyList();
     protected Pagina scope = null;
     private boolean recons = true;
+    private boolean reanc = false;
     private boolean treecol, infocol;
     /* A largura que a coluna tinha quando foi colapsada, devolvida ao expandir. */
     private int treerest = treew, inforest = infow;
@@ -95,6 +96,15 @@ public abstract class MenuSearch extends Window {
 	    if(anc == null)
 		anc = MenuSearchLogic.ancestors(btn.pag, Pagina::parent);
 	    return(anc);
+	}
+
+	/* O cache vale enquanto a árvore não muda de forma. Um pagseq novo pode
+	 * reparentar uma categoria intermediária sem invalidar a pagina desta
+	 * folha, e aí o PagButton sobrevive ao updlist com a cadeia velha: a
+	 * árvore mostra a folha sob o pai novo e o filtro por essa família não a
+	 * encontra, para sempre. */
+	protected void reanc() {
+	    anc = null;
 	}
 
 	public boolean inscope(Pagina scope) {
@@ -184,11 +194,19 @@ public abstract class MenuSearch extends Window {
 		 * que só recebe o evento depois de nós: PointerEvent.propagation
 		 * percorre lchild -> prev (Widget.java:981) e o deco está na
 		 * cabeça da lista. Devolvendo false o clique continua o caminho
-		 * até ele. A zona é a mesma de Window.java:352, em coordenadas
-		 * da área de conteúdo. */
+		 * até ele.
+		 *
+		 * A zona é a de Window.java:352 convertida para coordenadas da
+		 * área de conteúdo, e a margem entra na conta: lá o teste é
+		 * contra ca.br, que é aa.br mais a margem nos dois eixos
+		 * (Window.java:252-253). Sem somar a margem a faixa devolvida
+		 * aqui é maior que a que o deco aceita, e a diagonal entre as
+		 * duas cai em DragDeco.checkhit -- clique na barra, janela
+		 * andando. */
 		Coord cc = ev.c.add(this.c);
 		Coord wsz = MenuSearch.this.csz();
-		if(cc.y >= (wsz.y - UI.scale(25) + (wsz.x - cc.x)))
+		Coord mrgn = MenuSearch.this.large ? dlmrgn : dsmrgn;
+		if(cc.y >= (wsz.y - UI.scale(25) + mrgn.x + mrgn.y + (wsz.x - cc.x)))
 		    return(false);
 		if(left)
 		    toggletree();
@@ -388,6 +406,12 @@ public abstract class MenuSearch extends Window {
     /* Chamado pela árvore. Colapsar a coluna 1 não passa por aqui: a família
      * continua valendo, só deixa de estar visível. */
     public void setscope(Pagina scope) {
+	/* A árvore chama isto a cada clique, inclusive no clique que reafirma a
+	 * família já selecionada. Sem a guarda, reclicar a linha destacada joga
+	 * a lista de volta para o topo -- a rolagem só deve zerar quando o
+	 * escopo muda de verdade. */
+	if(this.scope == scope)
+	    return;
 	this.scope = scope;
 	rls.scrollval(0);
 	refilter();
@@ -476,6 +500,8 @@ public abstract class MenuSearch extends Window {
 
     protected void updlist() {
 	recons = false;
+	boolean reanc = this.reanc;
+	this.reanc = false;
 	List<PagButton> buf = new ArrayList<>();
 	if(generate(buf))
 	    recons = true;
@@ -487,6 +513,8 @@ public abstract class MenuSearch extends Window {
 	    Result pr = prev.get(btn);
 	    if(pr == null)
 		pr = new Result(btn);
+	    else if(reanc)
+		pr.reanc();
 	    results.add(pr);
 	    try {
 		pr.ancestors();
@@ -502,8 +530,13 @@ public abstract class MenuSearch extends Window {
 	refilter();
     }
 
+    /* Só quem chama isto é o tick ao ver um pagseq novo. As remarcações por
+     * Loading escrevem o campo direto, de propósito: recurso atrasado não
+     * reparenteia nada, e refazer a cadeia de ancestrais a cada quadro
+     * enquanto os recursos chegam é trabalho jogado fora. */
     protected void recons() {
 	recons = true;
+	reanc = true;
     }
 
     public void tick(TickEvent ev) {
