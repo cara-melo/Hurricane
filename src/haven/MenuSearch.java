@@ -91,10 +91,12 @@ public abstract class MenuSearch extends Window {
     /* As larguras fixas das colunas 1 e 2, em pixels já escalados. Só mudam por
      * arrasto da divisória, e sobrevivem à sessão. */
     private int treefix = treew, listfix = listw;
-    /* A largura que a coluna 3 tinha quando foi colapsada, devolvida ao
-     * expandir. A árvore não precisa de um par disto: `treefix` já é a largura
-     * dela. */
-    private int inforest = infow;
+    /* Quanto a janela encolheu ao colapsar cada coluna, devolvido ao expandir.
+     * Não é a largura escolhida pelo usuário: numa janela apertada a cascata de
+     * `widths` mostra a árvore mais estreita que `treefix`, e é essa largura
+     * menor que tem que voltar, senão o par colapsar-expandir alarga a janela
+     * sozinho. `treefix` continua guardando a escolha do arrasto. */
+    private int treerest = treew, inforest = infow;
 
     public class Result {
 	public final PagButton btn;
@@ -483,18 +485,14 @@ public abstract class MenuSearch extends Window {
 	Coord csz = csz();
 	if(treecol) {
 	    treecol = false;
-	    resize(Coord.of(csz.x + treefix, csz.y));
+	    resize(Coord.of(csz.x + treerest, csz.y));
 	} else {
-	    /* Encolher pela largura que a árvore tem na tela, que a cascata pode
-	     * ter deixado abaixo de `treefix` numa janela apertada. `treefix` em
-	     * si não muda e a preferência não é regravada: ela é a escolha do
-	     * usuário e só o arrasto da divisória a altera. Guardar `tree.sz.x`
-	     * em `treefix` aqui, como fazia o `treerest`, apagaria de vez uma
-	     * largura arrastada toda vez que a janela estivesse apertada na hora
-	     * do colapso -- o `treerest` podia fazer isso porque não era
-	     * arrastável nem gravado. */
+	    /* Guarda o encolhimento, não a escolha do usuário: `treefix` é a
+	     * largura arrastada e sobrevive a um colapso feito com a janela
+	     * apertada, quando a árvore na tela está mais estreita que ele. */
+	    treerest = tree.sz.x;
 	    treecol = true;
-	    resize(Coord.of(csz.x - tree.sz.x, csz.y));
+	    resize(Coord.of(csz.x - treerest, csz.y));
 	}
 	Utils.setprefb(pref_tree, treecol);
 	/* Expandir cresce a janela. Sem isto ela pode passar da borda da tela e
