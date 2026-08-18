@@ -49,10 +49,23 @@ public class MenuSearchInfo extends Widget {
     public static final Color frame = new Color(74, 61, 40, 255);
     public static final int marg = UI.scale(4);
 
+    /* Fator de escala do painel, de 1,0 a 1,9, vindo do slider das opções.
+     *
+     * A imagem é composta em largura/fator e desenhada esticada, e não
+     * re-renderizada com fonte maior. Medido: o caminho nítido só alcançaria o
+     * título e a descrição, que passam por RichText -- as linhas de insumo e de
+     * habilidade são desenhadas por código que vem do servidor, com fundições
+     * estáticas próprias, e ficariam do tamanho de hoje enquanto o resto cresce.
+     * O esticamento é filtro linear da GPU, sem custo de CPU por quadro, e a
+     * imagem composta fica menor que a de hoje, então cada reconstrução sai mais
+     * barata. */
+    public static double scale = Math.max(1.0, Utils.getprefi("actionSearchInfoScale", 100) / 100.0);
+
     private PagButton cur = null;
     private Tex tex = null;
     private PagButton texbtn = null;
     private int texw = -1;
+    private double texf = 0;
 
     public MenuSearchInfo(Coord sz) {
 	super(sz);
@@ -63,21 +76,26 @@ public class MenuSearchInfo extends Widget {
     }
 
     /* O cache é obrigatório mesmo com a janela parada: draw() roda a cada
-     * frame. A chave é (item, largura) porque a largura decide a quebra de
-     * linha do título. */
-    private Tex render(int w) {
+     * frame. A chave é (item, largura, fator) porque os três decidem a imagem:
+     * a largura decide a quebra de linha, e o fator decide em que largura ela é
+     * composta antes de ser esticada. */
+    private Tex render(int w, double f) {
 	PagButton btn = this.cur;
 	if(btn == null)
 	    return(null);
-	if((texbtn == btn) && (texw == w))
+	if((texbtn == btn) && (texw == w) && (texf == f))
 	    return(tex);
+	/* O piso vale sobre a largura de composição, depois da divisão: um
+	 * painel estreito com fator alto pediria uma imagem de largura zero. */
+	int rw = Math.max((int)Math.round(w / f), UI.scale(40));
 	try {
-	    BufferedImage img = btn.rendertt(true, w, false);
+	    BufferedImage img = btn.rendertt(true, rw, rw, false);
 	    if(tex != null)
 		tex.dispose();
 	    tex = new TexI(img);
 	    texbtn = btn;
 	    texw = w;
+	    texf = f;
 	} catch(Loading l) {
 	    /* Frequente: info() e res.layer() disparam enquanto os recursos
 	     * ainda chegam. Mantém o que está desenhado e tenta de novo no
@@ -96,6 +114,7 @@ public class MenuSearchInfo extends Widget {
 	    tex = null;
 	    texbtn = btn;
 	    texw = w;
+	    texf = f;
 	}
 	return(tex);
     }
@@ -116,9 +135,13 @@ public class MenuSearchInfo extends Widget {
 		texbtn = null;
 	    }
 	} else if((isz.x > 0) && (isz.y > 0)) {
-	    Tex tex = render(Math.max(isz.x, UI.scale(40)));
-	    if(tex != null)
-		g.reclip(Coord.of(marg), isz).image(tex, Coord.z);
+	    double f = Math.max(1.0, scale);
+	    Tex tex = render(isz.x, f);
+	    if(tex != null) {
+		Coord dsz = Coord.of((int)Math.round(tex.sz().x * f),
+				     (int)Math.round(tex.sz().y * f));
+		g.reclip(Coord.of(marg), isz).image(tex, Coord.z, dsz);
+	    }
 	}
 	/* Fora do if: hoje não há filhos, mas o dia que houver -- uma barra de
 	 * rolagem -- eles não podem sumir só porque nada está selecionado. */
