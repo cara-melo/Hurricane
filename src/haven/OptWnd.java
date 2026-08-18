@@ -770,6 +770,7 @@ public class OptWnd extends Window {
 	public static HSlider mapZoomSpeedSlider;
 	public static CheckBox alwaysOpenMiniStudyOnLoginCheckBox;
 	public static HSlider mapIconsSizeSlider;
+	public static HSlider actionSearchInfoScaleSlider;
 	public static CheckBox simplifiedMapColorsCheckBox;
 	public static ColorOptionWidget sprintLandsColorWidget;
 	public static ColorOptionWidget thirdSpeedLandsColorWidget;
@@ -1121,6 +1122,19 @@ public class OptWnd extends Window {
 				tsz = new Coord((GobIcon.size * buf.getWidth()) / buf.getHeight(), GobIcon.size);
 			buf = PUtils.convolve(buf, tsz, GobIcon.filter);
 			MiniMap.plp = new TexI(buf);
+		}), rightColumn.pos("ur").adds(6, -4)).tooltip = resetButtonTooltip;
+
+		rightColumn = add(new Label("Action Search Info Scale:"), rightColumn.pos("bl").adds(0, 10).x(UI.scale(230)));
+		rightColumn = add(actionSearchInfoScaleSlider = new HSlider(UI.scale(110), 100, 190, Utils.getprefi("actionSearchInfoScale", 100)) {
+			public void changed() {
+				Utils.setprefi("actionSearchInfoScale", val);
+				MenuSearchInfo.scale = val / 100.0;
+			}
+		}, rightColumn.pos("bl").adds(0, 4));
+		add(new Button(UI.scale(60), "Reset", false).action(() -> {
+			actionSearchInfoScaleSlider.val = 100;
+			Utils.setprefi("actionSearchInfoScale", 100);
+			MenuSearchInfo.scale = 1.0;
 		}), rightColumn.pos("ur").adds(6, -4)).tooltip = resetButtonTooltip;
 		rightColumn = add(improvedInstrumentMusicWindowCheckBox = new CheckBox("Improved Instrument Music Window"){
 			{a = (Utils.getprefb("improvedInstrumentMusicWindow", true));}
