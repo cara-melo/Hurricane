@@ -161,4 +161,48 @@ public class MenuSearchLogic {
     public static boolean fallback(int scopedcount, boolean hasscope, boolean hastext) {
 	return((scopedcount == 0) && hasscope && hastext);
     }
+
+    /* Distribui a largura de conteúdo, já descontadas as duas faixas, entre as
+     * três colunas.
+     *
+     * Colunas 1 e 2 têm largura fixa, escolhida pelo arrasto da divisória, e a
+     * coluna 3 fica com o resto. É a única das três que converte largura em
+     * conteúdo: a lista mostra todos os nomes de ação do jogo com 241 escalados
+     * e a árvore todas as famílias com 246, enquanto a descrição reflui e não
+     * rola, então largura extra ali é a única defesa contra o texto ser cortado
+     * embaixo. Dividir o excedente pelos três, como fazia a versão de pesos,
+     * entrega espaço morto para as duas primeiras.
+     *
+     * Com a coluna 3 colapsada quem absorve é a lista: alguém tem que ficar com
+     * a sobra, e ela é a única elástica que restou.
+     *
+     * Ao encolher, a cascata é 3, depois lista, depois árvore -- do mais
+     * elástico para o menos. Abaixo da soma dos três mínimos a coluna 3 fica
+     * pequena em vez de negativa; a janela não chega lá, porque MenuSearch.minw()
+     * a barra antes. */
+    public static int[] widths(int flex, int treefix, int listfix,
+			       int treemin, int listmin, int infomin,
+			       boolean treecol, boolean infocol) {
+	int tw = treecol ? 0 : Math.max(treefix, treemin);
+	int lw = Math.max(listfix, listmin);
+	if(infocol) {
+	    lw = flex - tw;
+	    if(lw < listmin) {
+		tw = Math.max(tw - (listmin - lw), treecol ? 0 : treemin);
+		lw = Math.max(flex - tw, listmin);
+	    }
+	    return(new int[] {Math.max(tw, 0), Math.max(lw, 0), 0});
+	}
+	int iw = flex - tw - lw;
+	if(iw < infomin) {
+	    int need = infomin - iw;
+	    int give = Math.min(need, lw - listmin);
+	    lw -= give;
+	    need -= give;
+	    give = Math.min(need, tw - (treecol ? 0 : treemin));
+	    tw -= give;
+	    iw = flex - tw - lw;
+	}
+	return(new int[] {Math.max(tw, 0), Math.max(lw, 0), Math.max(iw, 0)});
+    }
 }
