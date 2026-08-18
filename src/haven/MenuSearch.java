@@ -278,7 +278,14 @@ public abstract class MenuSearch extends Window {
 
 	public void mousemove(MouseMoveEvent ev) {
 	    if(grab != null) {
-		if(!dragging && (ev.c.dist(start) > UI.scale(3)))
+		/* Só o eixo horizontal: a divisória não se move no vertical, e
+		 * um limiar euclidiano deixaria um escorregão vertical de 4
+		 * escalados virar arrasto. Com a janela apertada isso não é
+		 * inofensivo -- `dragbar` recebe a borda da faixa como ela está
+		 * na tela, que sob a cascata de `widths` é menor que a largura
+		 * guardada, e o `mouseup` gravaria essa largura menor por cima
+		 * da escolhida sem que nada tivesse se mexido na tela. */
+		if(!dragging && (Math.abs(ev.c.x - start.x) > UI.scale(3)))
 		    dragging = true;
 		/* `ev.c.x + this.c.x` é a posição absoluta do ponteiro na área
 		 * de conteúdo, e `start.x` é onde dentro da faixa o botão foi
@@ -329,6 +336,12 @@ public abstract class MenuSearch extends Window {
 	this.infocol = Utils.getprefb(pref_info, false);
 	this.treefix = Utils.getprefi(pref_treew, treew);
 	this.listfix = Utils.getprefi(pref_listw, listw);
+	/* Quem abre com a árvore já colapsada não tem a largura de antes do
+	 * colapso, que morreu com a sessão passada; a arrastada é o palpite
+	 * certo, porque é dela que a árvore sairia se estivesse aberta. Sem
+	 * isto, expandir devolve os 250 do padrão à janela enquanto `widths`
+	 * dá a largura arrastada à árvore, e a diferença é cobrada da lista. */
+	this.treerest = Math.max(this.treefix, treemin);
 	tree = add(new MenuSearchTree(this, Coord.of(treew, deflisth)));
 	treebar = add(new SplitBar(true));
 	fbmsg = add(new Fallback(listw));
@@ -377,9 +390,9 @@ public abstract class MenuSearch extends Window {
 	return(infocol);
     }
 
-    /* Distribui a área de conteúdo entre as três colunas, proporcionalmente às
-     * larguras base. Uma coluna colapsada é escondida e não entra na conta; sua
-     * faixa continua lá e é o que resta dela na tela. */
+    /* Distribui a área de conteúdo entre as três colunas: 1 e 2 com as larguras
+     * fixas do arrasto, a 3 com o resto. Uma coluna colapsada é escondida e não
+     * entra na conta; sua faixa continua lá e é o que resta dela na tela. */
     protected void layout() {
 	Coord csz = csz();
 	int h = csz.y;

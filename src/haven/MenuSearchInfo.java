@@ -148,8 +148,13 @@ public class MenuSearchInfo extends Widget {
 	    double f = clampscale(scale);
 	    Tex tex = render(isz.x, f);
 	    if(tex != null) {
-		Coord dsz = Coord.of((int)Math.round(tex.sz().x * f),
-				     (int)Math.round(tex.sz().y * f));
+		/* `texf`, não `f`: no caminho de Loading render() devolve a
+		 * textura antiga de propósito, e ela foi composta no fator de
+		 * antes. Esticá-la pelo fator pedido mostraria a composição
+		 * velha em `(w/f_antigo)·f_novo` -- até 1,9x larga demais e
+		 * cortada pelo reclip -- até os recursos chegarem. */
+		Coord dsz = Coord.of((int)Math.round(tex.sz().x * texf),
+				     (int)Math.round(tex.sz().y * texf));
 		g.reclip(Coord.of(marg), isz).image(tex, Coord.z, dsz);
 	    }
 	}
