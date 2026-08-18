@@ -42,13 +42,21 @@ public abstract class MenuSearch extends Window {
     public static final Text.Foundry elf = CharWnd.attrf;
     public static final int elh = elf.height() + UI.scale(2);
 
-    /* Larguras base, usadas como pesos: cada coluna leva sua fração do espaço
-     * disponível, e as três crescem juntas. */
-    public static final int treew = UI.scale(150), listw = UI.scale(250), infow = UI.scale(300);
+    /* Larguras das colunas 1 e 2. Não são mais pesos: cada uma é a largura fixa
+     * que a coluna tem até o usuário arrastar a divisória. `infow` sobrou só
+     * para o tamanho padrão da janela, porque a coluna 3 é sempre o resto.
+     *
+     * A árvore vale 250 e não os 150 de antes por medição: dos 93 nomes de
+     * família do jogo, metade passa de 150 e nenhum passa de 246. */
+    public static final int treew = UI.scale(250), listw = UI.scale(250), infow = UI.scale(300);
     public static final int treemin = UI.scale(90), listmin = UI.scale(140), infomin = UI.scale(160);
     /* A faixa entre duas colunas. Quando a coluna ao lado está colapsada ela é
      * tudo o que sobra dela, que é a faixa clicável de 15 do design. */
     public static final int barw = UI.scale(15);
+    /* A tampa de colapso, no topo da faixa: uma linha da lista de altura. O
+     * resto da faixa é zona de arrasto, e as duas não se misturam para não
+     * haver missclick entre colapsar e redimensionar. */
+    public static final int caph = elh;
     public static final int minlisth = UI.scale(200);
     public static final int deflisth = UI.scale(500);
     /* Altura reservada no pé da coluna 3 para o punho de resize do deco
@@ -60,6 +68,8 @@ public abstract class MenuSearch extends Window {
     public static final String pref_sz = "wndsz-srch";
     public static final String pref_tree = "srch-tree-collapsed";
     public static final String pref_info = "srch-info-collapsed";
+    public static final String pref_treew = "srch-tree-w";
+    public static final String pref_listw = "srch-list-w";
 
     public static final KeyBinding kb_itemcraft = KeyBinding.get("scm-itemcraft", KeyMatch.nil);
 
@@ -78,8 +88,13 @@ public abstract class MenuSearch extends Window {
     private boolean recons = true;
     private boolean reanc = false;
     private boolean treecol, infocol;
-    /* A largura que a coluna tinha quando foi colapsada, devolvida ao expandir. */
-    private int treerest = treew, inforest = infow;
+    /* As larguras fixas das colunas 1 e 2, em pixels já escalados. Só mudam por
+     * arrasto da divisória, e sobrevivem à sessão. */
+    private int treefix = treew, listfix = listw;
+    /* A largura que a coluna 3 tinha quando foi colapsada, devolvida ao
+     * expandir. A árvore não precisa de um par disto: `treefix` já é a largura
+     * dela. */
+    private int inforest = infow;
 
     public class Result {
 	public final PagButton btn;
@@ -235,6 +250,8 @@ public abstract class MenuSearch extends Window {
 	this.menu = menu;
 	this.treecol = Utils.getprefb(pref_tree, false);
 	this.infocol = Utils.getprefb(pref_info, false);
+	this.treefix = Utils.getprefi(pref_treew, treew);
+	this.listfix = Utils.getprefi(pref_listw, listw);
 	tree = add(new MenuSearchTree(this, Coord.of(treew, deflisth)));
 	treebar = add(new CollapseBar(true));
 	fbmsg = add(new Fallback(listw));
@@ -291,19 +308,9 @@ public abstract class MenuSearch extends Window {
 	int h = csz.y;
 	int listh = h - sbox.sz.y - ingbtn.sz.y - (fbmsg.visible ? elh : 0);
 	listh = Math.max(listh, elh);
-	int flex = Math.max(csz.x - (barw * 2), listmin);
-	/* Cada coluna leva primeiro o seu mínimo; só o excedente é dividido
-	 * pelos pesos. Dividir o total pelos pesos violaria o mínimo da coluna
-	 * 1, porque 150:250:300 não é a mesma proporção de 90:140:160 -- na
-	 * largura mínima a árvore ficaria com 83 dos 90 exigidos. */
-	int tmin = treecol ? 0 : treemin, imin = infocol ? 0 : infomin;
-	int wsum = listw + (treecol ? 0 : treew) + (infocol ? 0 : infow);
-	int surplus = Math.max(flex - (tmin + listmin + imin), 0);
-	int tw = treecol ? 0 : (tmin + ((surplus * treew) / wsum));
-	int iw = infocol ? 0 : (imin + ((surplus * infow) / wsum));
-	/* O resto vai para a lista, para nenhum pixel se perder no
-	 * arredondamento. */
-	int lw = flex - tw - iw;
+	int flex = Math.max(csz.x - (barw * 2), 0);
+	int[] cw = MenuSearchLogic.widths(flex, treefix, listfix, treemin, listmin, infomin, treecol, infocol);
+	int tw = cw[0], lw = cw[1], iw = cw[2];
 	/* A coluna 3 e sua faixa param acima do canto, para o punho de resize
 	 * continuar visível. */
 	int rh = Math.max(h - sizerh, elh);
@@ -355,6 +362,33 @@ public abstract class MenuSearch extends Window {
 	}
     }
 
+    private static int clamp(int v, int min, int max) {
+	return(Math.max(min, Math.min(v, Math.max(min, max))));
+    }
+
+    /* Chamado pela faixa enquanto ela é arrastada. `cx` é a posição do lado
+     * esquerdo da faixa em coordenadas da área de conteúdo: a divisória segue o
+     * ponteiro. O limite superior é o que sobra depois dos mínimos das outras
+     * colunas visíveis, para um arrasto largo nunca espremer a coluna 3 abaixo
+     * do mínimo dela. */
+    public void dragbar(boolean left, int cx) {
+	int flex = Math.max(csz().x - (barw * 2), 0);
+	if(left) {
+	    treefix = clamp(cx, treemin, flex - listmin - (infocol ? 0 : infomin));
+	} else {
+	    int[] cw = MenuSearchLogic.widths(flex, treefix, listfix, treemin, listmin, infomin, treecol, infocol);
+	    listfix = clamp(cx - cw[0] - barw, listmin, flex - cw[0] - infomin);
+	}
+	layout();
+    }
+
+    /* Só no fim do arrasto: gravar a cada pixel escreveria a preferência
+     * dezenas de vezes por segundo. */
+    protected void savewidths() {
+	Utils.setprefi(pref_treew, treefix);
+	Utils.setprefi(pref_listw, listfix);
+    }
+
     public void resize(Coord sz) {
 	/* Nenhum caminho conhecido chega aqui antes das colunas existirem --
 	 * Window.chdeco usa o resize2() privado, e o construtor de Widget não
@@ -374,11 +408,18 @@ public abstract class MenuSearch extends Window {
 	Coord csz = csz();
 	if(treecol) {
 	    treecol = false;
-	    resize(Coord.of(csz.x + treerest, csz.y));
+	    resize(Coord.of(csz.x + treefix, csz.y));
 	} else {
-	    treerest = Math.max(tree.sz.x, treemin);
+	    /* Encolher pela largura que a árvore tem na tela, que a cascata pode
+	     * ter deixado abaixo de `treefix` numa janela apertada. `treefix` em
+	     * si não muda e a preferência não é regravada: ela é a escolha do
+	     * usuário e só o arrasto da divisória a altera. Guardar `tree.sz.x`
+	     * em `treefix` aqui, como fazia o `treerest`, apagaria de vez uma
+	     * largura arrastada toda vez que a janela estivesse apertada na hora
+	     * do colapso -- o `treerest` podia fazer isso porque não era
+	     * arrastável nem gravado. */
 	    treecol = true;
-	    resize(Coord.of(csz.x - treerest, csz.y));
+	    resize(Coord.of(csz.x - tree.sz.x, csz.y));
 	}
 	Utils.setprefb(pref_tree, treecol);
 	/* Expandir cresce a janela. Sem isto ela pode passar da borda da tela e
