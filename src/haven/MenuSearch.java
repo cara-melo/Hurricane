@@ -77,7 +77,7 @@ public abstract class MenuSearch extends Window {
     public final MenuSearchTree tree;
     public final MenuSearchList rls;
     public final MenuSearchInfo info;
-    public final CollapseBar treebar, infobar;
+    public final SplitBar treebar, infobar;
     public final Fallback fbmsg;
     public final TextEntry sbox;
     public final Button ingbtn;
@@ -175,12 +175,21 @@ public abstract class MenuSearch extends Window {
 	}
     }
 
-    /* A faixa de 15 entre duas colunas. Clicar colapsa ou expande a coluna do
-     * lado indicado. */
-    public class CollapseBar extends Widget {
+    /* A faixa entre duas colunas. A tampa no topo colapsa e expande; o corpo
+     * abaixo dela arrasta a divisória. As duas zonas não se sobrepõem: um
+     * clique só colapsa se cair na tampa, e um arrasto só redimensiona se
+     * começar no corpo.
+     *
+     * Com a coluna colapsada não existe divisória para arrastar -- a faixa é o
+     * que sobrou da coluna na tela -- então ela inteira vira o botão de
+     * expandir, que é a ação mais difícil de descobrir e merece o alvo maior. */
+    public class SplitBar extends Widget {
 	public final boolean left;
+	private UI.Grab grab = null;
+	private Coord start = null;
+	private boolean dragging = false;
 
-	public CollapseBar(boolean left) {
+	public SplitBar(boolean left) {
 	    super(Coord.of(barw, elh));
 	    this.left = left;
 	}
@@ -190,16 +199,35 @@ public abstract class MenuSearch extends Window {
 	}
 
 	public void draw(GOut g) {
+	    boolean col = collapsed();
 	    g.chcolor(60, 50, 34, 255);
 	    g.frect2(Coord.z, sz);
+	    if(!col) {
+		/* A tampa fica um tom acima do corpo, com um fio embaixo: as
+		 * duas zonas fazem coisas diferentes e não podem parecer a
+		 * mesma superfície. */
+		g.chcolor(82, 69, 47, 255);
+		g.frect2(Coord.z, Coord.of(sz.x, caph));
+		g.chcolor(38, 32, 22, 255);
+		g.line(Coord.of(0, caph), Coord.of(sz.x, caph), 1.0);
+	    }
 	    g.chcolor(200, 180, 140, 255);
 	    /* A seta aponta para onde o clique vai mover a coluna. */
-	    boolean pointleft = (left != collapsed());
-	    int mx = sz.x / 2, my = sz.y / 2, a = UI.scale(4);
+	    boolean pointleft = (left != col);
+	    int mx = sz.x / 2, my = col ? (sz.y / 2) : (caph / 2), a = UI.scale(4);
 	    int tip = pointleft ? (mx - (a / 2)) : (mx + (a / 2));
 	    int tail = pointleft ? (mx + (a / 2)) : (mx - (a / 2));
 	    g.line(Coord.of(tail, my - a), Coord.of(tip, my), 1.0);
 	    g.line(Coord.of(tip, my), Coord.of(tail, my + a), 1.0);
+	    if(!col) {
+		/* Três pontos no centro vertical da zona de arrasto: sem eles a
+		 * faixa não avisa que dá para pegá-la. */
+		g.chcolor(150, 132, 100, 255);
+		int u = UI.scale(1), cy = caph + ((sz.y - caph) / 2), d = UI.scale(5);
+		for(int i = -1; i <= 1; i++)
+		    g.frect2(Coord.of(mx - u, (cy + (i * d)) - u),
+			     Coord.of(mx + u, (cy + (i * d)) + u));
+	    }
 	    g.chcolor();
 	}
 
@@ -223,13 +251,60 @@ public abstract class MenuSearch extends Window {
 		Coord mrgn = MenuSearch.this.large ? dlmrgn : dsmrgn;
 		if(cc.y >= (wsz.y - UI.scale(25) + mrgn.x + mrgn.y + (wsz.x - cc.x)))
 		    return(false);
-		if(left)
-		    toggletree();
-		else
-		    toggleinfo();
+		if(collapsed() || (ev.c.y < caph)) {
+		    if(left)
+			toggletree();
+		    else
+			toggleinfo();
+		    return(true);
+		}
+		/* O grab não é o que traz os movimentos: o filtro de
+		 * UI.grabmouse (UI.java:596-600) passa só down, up, wheel e
+		 * CursorQuery, e MouseMoveEvent.propagation (Widget.java:1060)
+		 * faz broadcast para todo filho visível, sem hit test, então a
+		 * faixa recebe o movimento estando ou não sob o ponteiro. O grab
+		 * serve para o mouseup, esse sim testado contra a área do widget,
+		 * e para os vizinhos não receberem clique no meio do arrasto. Sem
+		 * ele o botão solto fora da faixa deixaria o arrasto preso. */
+		start = ev.c;
+		dragging = false;
+		grab = ui.grabmouse(this);
 		return(true);
 	    }
 	    return(super.mousedown(ev));
+	}
+
+	public void mousemove(MouseMoveEvent ev) {
+	    if(grab != null) {
+		if(!dragging && (ev.c.dist(start) > UI.scale(3)))
+		    dragging = true;
+		/* `ev.c.x + this.c.x` é a posição absoluta do ponteiro na área
+		 * de conteúdo, e `start.x` é onde dentro da faixa o botão foi
+		 * apertado. Subtrair um do outro dá a borda esquerda da faixa
+		 * como o usuário a segurou: sem isso a divisória pularia para
+		 * debaixo do ponteiro no instante em que o limiar é cruzado, até
+		 * 14 escalados de salto. Como `start.x` é fixo durante o arrasto
+		 * e a posição absoluta não depende de onde a faixa foi parar, o
+		 * valor é função pura do ponteiro -- a divisória fica presa no
+		 * batente enquanto o ponteiro estiver além dele e solta no ponto
+		 * exato em que ele volta. */
+		if(dragging)
+		    MenuSearch.this.dragbar(left, ev.c.x + this.c.x - start.x);
+	    }
+	    super.mousemove(ev);
+	}
+
+	public boolean mouseup(MouseUpEvent ev) {
+	    if((ev.b == 1) && (grab != null)) {
+		grab.remove();
+		grab = null;
+		if(dragging)
+		    savewidths();
+		dragging = false;
+		start = null;
+		return(true);
+	    }
+	    return(super.mouseup(ev));
 	}
     }
 
@@ -253,7 +328,7 @@ public abstract class MenuSearch extends Window {
 	this.treefix = Utils.getprefi(pref_treew, treew);
 	this.listfix = Utils.getprefi(pref_listw, listw);
 	tree = add(new MenuSearchTree(this, Coord.of(treew, deflisth)));
-	treebar = add(new CollapseBar(true));
+	treebar = add(new SplitBar(true));
 	fbmsg = add(new Fallback(listw));
 	rls = add(new MenuSearchList(this, Coord.of(listw, deflisth)));
 	sbox = add(new TextEntry(listw, "") {
@@ -274,7 +349,7 @@ public abstract class MenuSearch extends Window {
 	ingbtn = add(new Button(listw, "Search by ingredient", false)
 		     .action(() -> menu.wdgmsg("act", "itemcraft")));
 	ingbtn.setgkey(kb_itemcraft);
-	infobar = add(new CollapseBar(false));
+	infobar = add(new SplitBar(false));
 	info = add(new MenuSearchInfo(Coord.of(infow, deflisth)));
 	fbmsg.hide();
     }
