@@ -59,7 +59,17 @@ public class MenuSearchInfo extends Widget {
      * O esticamento é filtro linear da GPU, sem custo de CPU por quadro, e a
      * imagem composta fica menor que a de hoje, então cada reconstrução sai mais
      * barata. */
-    public static double scale = Math.max(1.0, Utils.getprefi("actionSearchInfoScale", 100) / 100.0);
+    public static final double minscale = 1.0, maxscale = 1.9;
+    public static double scale = clampscale(Utils.getprefi("actionSearchInfoScale", 100) / 100.0);
+
+    /* A preferência é um inteiro em por cento e o slider vai só até 190, mas o
+     * arquivo de preferências é editável e sobrevive a mudanças de faixa entre
+     * versões. Sem o teto um valor perdido lá dentro faria o painel compor uma
+     * imagem minúscula e esticá-la muito além das bordas, e o reclip mostraria
+     * só um pedaço ampliado. */
+    public static double clampscale(double f) {
+	return(Math.max(minscale, Math.min(f, maxscale)));
+    }
 
     private PagButton cur = null;
     private Tex tex = null;
@@ -135,7 +145,7 @@ public class MenuSearchInfo extends Widget {
 		texbtn = null;
 	    }
 	} else if((isz.x > 0) && (isz.y > 0)) {
-	    double f = Math.max(1.0, scale);
+	    double f = clampscale(scale);
 	    Tex tex = render(isz.x, f);
 	    if(tex != null) {
 		Coord dsz = Coord.of((int)Math.round(tex.sz().x * f),
