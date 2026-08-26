@@ -52,6 +52,7 @@ public class UI {
     public Receiver rcvr;
     public Coord mc = Coord.z, lcc = Coord.z;
     public Session sess;
+    public volatile SessionTab tab = null;
     public boolean modshift, modctrl, modmeta, modsuper;
     public Object lasttip;
     public double lastevent, lasttick;
@@ -100,11 +101,18 @@ public class UI {
     }
 
     public void setgprefs(GSettings prefs) {
+	boolean changed = false;
 	synchronized(this) {
 	    if(!Utils.eq(prefs, this.gprefs)) {
 		this.gprefs = prefs;
 		gprefsdirty = true;
+		changed = true;
 	    }
+	}
+	if(changed) {
+	    SessionTab tab = this.tab;
+	    if(tab != null)
+		tab.set.spreadgprefs(this, prefs);
 	}
     }
 
@@ -114,6 +122,13 @@ public class UI {
 	synchronized(this) {
 	    this.gprefs = prefs;
 	}
+    }
+
+    /* Algo aconteceu nesta UI: se ela não está em foco, a aba dela acende. */
+    public void sessalert() {
+	SessionTab tab = this.tab;
+	if(tab != null)
+	    tab.set.alert(tab);
     }
 
     private class WidgetConsole extends Console {
@@ -961,9 +976,13 @@ public class UI {
 	return(env);
     }
 
+    private boolean destroyed = false;
+    public boolean destroyed() {return(destroyed);}
+
     public void destroy() {
 	queue.drain();
 	synchronized(this) {
+	    destroyed = true;
 	    root.destroy();
 	    audio.clear();
 	}
