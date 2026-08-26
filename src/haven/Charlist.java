@@ -68,7 +68,6 @@ public class Charlist extends Widget {
 	Gob.batWingCapeEquipped = false;
 	Gob.nightQueenDefeated = false;
     Gob.caveHermitAcquired = false;
-	Gob.alarmPlayed.clear();
     Config.setPlayerName(null);
     GameUI.gameTimeSpeedMultiplier = 3.29f;
     }

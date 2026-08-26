@@ -67,8 +67,8 @@ public class UI {
 	public GameUI gui = null;
 	private final Object guiLock = new Object();
 	public int lastWidgetID = 0;
-	public static Tex province = null;
-	public static Tex realm = null;
+	public Tex province = null;
+	public Tex realm = null;
 
     {
 	lastevent = lasttick = Utils.rtime();

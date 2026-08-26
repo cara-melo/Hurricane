@@ -180,7 +180,10 @@ public class RootWidget extends ConsoleHost implements UI.Notice.Handler, Widget
 	    int a = 0;
 	    Indir<Resource> resid = (args.length > a) ? ui.sess.getresv(args[a++]) : null;
 	    boolean loop = (args.length > a) ? Utils.bv(args[a++]) : false;
-	    if(Music.enabled) {
+	    /* Só a sessão em foco manda na música. Uma aba de fundo que muda de
+	     * zona não pode trocar a música de quem está a jogar; ao ganhar o
+	     * foco a próxima mensagem de bgm põe as coisas no sítio. */
+	    if(Music.enabled && ((ui.tab == null) || ui.tab.set.isfocused(ui.tab))) {
 		if(resid == null)
 		    Music.play(null, false);
 		else

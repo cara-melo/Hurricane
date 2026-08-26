@@ -209,7 +209,6 @@ public class LoginScreen extends Widget {
 	Gob.batWingCapeEquipped = false;
 	Gob.nightQueenDefeated = false;
     Gob.caveHermitAcquired = false;
-	Gob.alarmPlayed.clear();
 	updateWindow = new Window(Coord.z, "Update Available!", true) {
 		{
 			Widget prev;
