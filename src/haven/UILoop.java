@@ -57,6 +57,11 @@ public abstract class UILoop implements Console.Directory {
     private UI lockedui;
     private long frameno = 0;
     public static boolean showFramerate = Utils.getprefb("showFramerate", true);
+    /* Quantas vezes por segundo as sessões fora de foco são tickadas. 30 é o
+     * suficiente para chat, alarme, timers e automação; o personagem em foco
+     * continua no framerate cheio. Limitado porque um valor <= 0 nas prefs daria
+     * um intervalo infinito e a thread dormiria para sempre. */
+    public static double bghz = Math.min(Math.max(Utils.getprefd("sessbghz", 30.0), 1.0), 144.0);
 
     public UILoop(Windeye wnd) {
 	this.wnd = wnd;
@@ -191,6 +196,60 @@ public abstract class UILoop implements Console.Directory {
 	    dead.add(old);
 	    uilock.notifyAll();
 	}
+    }
+
+    private Thread bgth = null;
+
+    /* Tudo menos desenhar: ctick do mundo e tick da UI. Sem gtick, sem
+     * display, sem entrada -- e sem resize, que o primeiro frame depois da
+     * troca de foco já faz. */
+    /* As duas condições dentro do monitor são o handshake com quem descarta
+     * UIs: destroy() marca destroyed dentro deste mesmo monitor, e discard()
+     * zera tab.ui. Sem elas, fechar uma aba enquanto a thread de fundo a ticka
+     * dispararia o tick numa árvore de widgets já destruída. */
+    private void bgtick(SessionTab tab, UI ui) {
+	synchronized(ui) {
+	    if(ui.destroyed() || (tab.ui != ui))
+		return;
+	    if(ui.sess != null)
+		ui.sess.glob.ctick();
+	    ui.tick();
+	}
+    }
+
+    private void bgloop() {
+	try {
+	    while(true) {
+		double start = Utils.rtime();
+		SessionSet sessions = this.sessions;
+		if(sessions != null) {
+		    for(SessionTab tab : sessions.tabs()) {
+			if(sessions.isfocused(tab))
+			    continue;
+			UI ui = tab.ui;
+			if(ui == null)
+			    continue;
+			try {
+			    bgtick(tab, ui);
+			} catch(Loading l) {
+			} catch(RuntimeException e) {
+			    new Warning(e, "background session tick failed").issue();
+			}
+		    }
+		}
+		double left = (1.0 / bghz) - (Utils.rtime() - start);
+		if(left > 0)
+		    Thread.sleep((long)(left * 1000));
+	    }
+	} catch(InterruptedException e) {
+	}
+    }
+
+    public void startbg() {
+	if(bgth != null)
+	    throw(new IllegalStateException());
+	bgth = new HackThread(this::bgloop, "Haven background session thread");
+	bgth.start();
     }
 
     /* O mesmo handshake que o newui já usa: lockedui é a UI do frame em curso
@@ -703,6 +762,15 @@ public abstract class UILoop implements Console.Directory {
 
     public void dispose() {
 	reapth.interrupt();
+	if(bgth != null) {
+	    bgth.interrupt();
+	    try {
+		bgth.join(2000);
+	    } catch(InterruptedException e) {
+		Thread.currentThread().interrupt();
+	    }
+	    bgth = null;
+	}
 	th.interrupt();
 	try {
 	    th.join(5000);
