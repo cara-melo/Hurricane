@@ -943,6 +943,14 @@ public class UI {
 	dispatch(root, new Widget.MouseMoveEvent(c));
     }
 
+    /* Movimento sem evento de sistema por trás: serve para dizer a uma UI que
+     * acaba de entrar em foco onde é que o rato está, sem lhe mexer nos
+     * modificadores, que são os dela e não os do evento antigo. */
+    public void mousemove(Coord c) {
+	mc = c;
+	dispatch(root, new Widget.MouseMoveEvent(c));
+    }
+
     public void mousehover(Coord c) {
 	dispatch(root, new Widget.MouseHoverEvent(c));
     }

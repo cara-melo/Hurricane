@@ -105,6 +105,10 @@ public class Client implements Console.Directory {
 	public final Client cl;
 	private final List<Toolkit.Event> pending = new ArrayList<>();
 	private Toolkit.MouseMoveEvent mousemv;
+	/* Só a thread de render mexe nestes dois: são lidos e escritos dentro de
+	 * dispatch(), que corre no frame. */
+	private Coord lastmc = null;
+	private UI lastui = null;
 
 	public EventQueue(Client cl) {
 	    this.cl = cl;
@@ -149,7 +153,18 @@ public class Client implements Console.Directory {
 		evs = new ArrayList<>(pending);
 		pending.clear();
 	    }
+	    /* Trocar de aba não gera evento de rato nenhum, mas cada UI tem o seu
+	     * ui.mc -- e é dele que saem o cursor desenhado, o hover e o tooltip.
+	     * A UI que entra em foco tem o mc parado onde ficou da última vez, por
+	     * isso o cursor pisca para o que estava debaixo do rato na sessão
+	     * anterior e só acerta quando o jogador mexe no rato. Reenviar a última
+	     * posição conhecida fecha essa janela; vai sem evento de sistema para
+	     * não escrever modificadores velhos por cima dos da UI nova. */
+	    if((ui != lastui) && (mousemv == null) && (lastmc != null))
+		ui.mousemove(lastmc);
+	    lastui = ui;
 	    if(mousemv != null) {
+		lastmc = mousemv.wndc();
 		ui.mousemove(AWTCompat.mkawt(mousemv), mousemv.wndc());
 	    }
 	    for(Toolkit.Event ev : evs) {
