@@ -109,6 +109,8 @@ public abstract class UILoop implements Console.Directory {
 	newui.root.guprof = uprof;
 	newui.root.grprof = rprof;
 	newui.root.ggprof = gprof;
+	if(sessions != null)
+	    newui.root.add(new SessTabStrip(sessions), Coord.z);
 	synchronized(uilock) {
 	    prevui = (tab == null) ? this.ui : tab.ui;
 	    if(tab != null)
