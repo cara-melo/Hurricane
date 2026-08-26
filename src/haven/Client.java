@@ -174,8 +174,8 @@ public class Client implements Console.Directory {
 	    this.cl = cl;
 	}
 
-	public UI newui(UI.Runner fun) {
-	    UI ui = super.newui(fun);
+	public UI newui(UI.Runner fun, SessionTab tab) {
+	    UI ui = super.newui(fun, tab);
 	    ui.cons.add(cl);
 	    return(ui);
 	}

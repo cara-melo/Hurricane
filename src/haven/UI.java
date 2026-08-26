@@ -131,6 +131,15 @@ public class UI {
 	    tab.set.alert(tab);
     }
 
+    /* Ao perder o foco: soltar os modificadores, para a sessão que sai não
+     * ficar achando que shift/ctrl/alt continuam pressionados. Botão de mouse
+     * segurado não é tratado -- movimento em H&H é por clique. */
+    public void clearmods() {
+	synchronized(this) {
+	    modshift = modctrl = modmeta = modsuper = false;
+	}
+    }
+
     private class WidgetConsole extends Console {
 	{
 	    setcmd("lo", new Command() {

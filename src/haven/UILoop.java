@@ -40,10 +40,18 @@ public abstract class UILoop implements Console.Directory {
     public static final Config.Variable<Boolean> profile = Config.Variable.propb("haven.profile", false);
     public final Windeye wnd;
     public final Thread th;
+    private final Thread reapth;
     public final CPUProfile uprof = new CPUProfile(300), rprof = new CPUProfile(300);
     public final GPUProfile gprof = new GPUProfile(300);
     public Environment env;
-    public UI ui;
+    public UI ui;		/* a UI da aba em foco */
+    /* Nulo no caminho de sessão única (replay, -servargs). */
+    public SessionSet sessions = null;
+    /* Qual aba está em foco, guardado por uilock. Existe para o uilock nunca
+     * precisar de perguntar nada ao SessionSet: a ordem de locks do cliente é
+     * SessionSet primeiro, uilock depois, e uma pergunta daqui para lá fecharia
+     * o ciclo. */
+    private SessionTab focustab = null;
     private final Cursor.Caps curscaps;
     private final Object uilock = new Object();
     private UI lockedui;
@@ -57,6 +65,9 @@ public abstract class UILoop implements Console.Directory {
 	this.curscaps = wnd.toolkit().cursorcaps();
 	newui(null);
 	this.th = new HackThread(this::run, "Haven UI thread");
+	this.reapth = new HackThread(this::reaploop, "Haven ui reaper thread");
+	this.reapth.setDaemon(true);
+	this.reapth.start();
     }
 
     public void start() {
@@ -80,17 +91,32 @@ public abstract class UILoop implements Console.Directory {
 
     private Audio.Root audio = null;
     public UI newui(UI.Runner fun) {
+	return(newui(fun, null));
+    }
+
+    public UI newui(UI.Runner fun, SessionTab tab) {
 	if(audio == null)
 	    audio = new Audio.Root(audiosink());
 	UI prevui, newui = new UI(wnd, audio, new Coord(wnd.size()), fun);
 	newui.env = this.env;
 	newui.cons.add(this);
+	newui.tab = tab;
+	newui.root.guprof = uprof;
+	newui.root.grprof = rprof;
+	newui.root.ggprof = gprof;
 	synchronized(uilock) {
-	    prevui = this.ui;
-	    this.ui = newui;
-	    ui.root.guprof = uprof;
-	    ui.root.grprof = rprof;
-	    ui.root.ggprof = gprof;
+	    prevui = (tab == null) ? this.ui : tab.ui;
+	    if(tab != null)
+		tab.ui = newui;
+	    /* focustab em vez de sessions.isfocused: ver o comentário do campo.
+	     * Comparar com o campo também resolve a ordem no arranque -- a
+	     * primeira aba pode chegar aqui antes de o Client chamar focus(), e
+	     * nesse caso é o focus() que adota esta UI. */
+	    if((tab == null) || (tab == focustab))
+		this.ui = newui;
+	    /* Esperar a thread de render largar a UI que vai morrer. Se ela
+	     * não estava em foco, lockedui nunca é igual a prevui e a espera
+	     * não acontece. */
 	    while((this.lockedui != null) && (this.lockedui == prevui)) {
 		try {
 		    uilock.wait();
@@ -100,10 +126,102 @@ public abstract class UILoop implements Console.Directory {
 		}
 	    }
 	}
-	if(prevui != null) {
+	if(prevui != null)
 	    prevui.destroy();
-	}
 	return(newui);
+    }
+
+    /* Passar a desenhar a UI desta aba. A troca vale a partir do próximo frame:
+     * a thread de render lê this.ui no começo de cada ciclo. Chamado sempre com
+     * o monitor do SessionSet na mão (é ele que serializa as trocas de foco);
+     * marcar focustab mesmo quando a aba ainda não tem UI é o que faz o newui
+     * seguinte adotá-la. */
+    public void focus(SessionTab tab) {
+	UI prev, next;
+	synchronized(uilock) {
+	    focustab = tab;
+	    prev = this.ui;
+	    next = (tab == null) ? null : tab.ui;
+	    if(next != null)
+		this.ui = next;
+	}
+	if((prev != null) && (next != null) && (prev != next))
+	    prev.clearmods();
+    }
+
+    /* A aba saiu: a UI dela vai para a fila e quem destrói é uma thread só para
+     * isso. Não pode ser aqui: discard é chamado a partir de um clique na barra,
+     * ou seja, de dentro da thread de render. E não pode ser a thread de render
+     * no frame seguinte: UI.destroy() começa por queue.drain(), que espera pelos
+     * comandos em voo -- um comando que levantou Loading fica na lista do Loader
+     * até o recurso chegar, e drain() nem sequer responde a interrupt. Fechar
+     * uma aba a meio de um carregamento congelaria o cliente inteiro. Se a UI
+     * que sai é a que está a ser desenhada, uma UI vazia entra no lugar na mesma
+     * hora. */
+    private final Collection<UI> dead = new ArrayList<>();
+
+    /* Construída fora do lock e reaproveitada: `new UI(...)` monta uma
+     * RootWidget, cujo inicializador de classe faz loadwait de um cursor, e um
+     * loadwait com o uilock na mão travava a thread de render no topo do frame.
+     * Uma instância só, que fica viva até o cliente fechar -- é uma UI vazia,
+     * não custa nada. */
+    private UI blank = null;
+    private UI blank() {
+	UI blank = this.blank;
+	if(blank == null) {
+	    if(audio == null)
+		audio = new Audio.Root(audiosink());
+	    blank = new UI(wnd, audio, new Coord(wnd.size()), null);
+	    blank.env = this.env;
+	    blank.cons.add(this);
+	    this.blank = blank;
+	}
+	return(blank);
+    }
+
+    public void discard(SessionTab tab) {
+	blank();		/* construída aqui, fora do lock */
+	synchronized(uilock) {
+	    UI old = tab.ui;
+	    tab.ui = null;
+	    if(old == null)
+		return;
+	    if(this.ui == old)
+		this.ui = this.blank;
+	    dead.add(old);
+	    uilock.notifyAll();
+	}
+    }
+
+    /* O mesmo handshake que o newui já usa: lockedui é a UI do frame em curso
+     * (fixada no topo de run()), portanto só se pode destruir uma UI depois de
+     * a thread de render ter começado um frame com outra. Como o discard já
+     * trocou this.ui, o frame seguinte serve. */
+    private void reaploop() {
+	try {
+	    while(true) {
+		UI ui = null;
+		synchronized(uilock) {
+		    while(ui == null) {
+			for(UI cand : dead) {
+			    if(cand != lockedui) {
+				ui = cand;
+				break;
+			    }
+			}
+			if(ui == null)
+			    uilock.wait();
+		    }
+		    dead.remove(ui);
+		}
+		try {
+		    ui.destroy();
+		} catch(RuntimeException e) {
+		    new Warning(e, "error destroying discarded ui").issue();
+		}
+	    }
+	} catch(InterruptedException e) {
+	}
     }
 
     /* XXX: Move to UI? */
@@ -584,6 +702,7 @@ public abstract class UILoop implements Console.Directory {
     }
 
     public void dispose() {
+	reapth.interrupt();
 	th.interrupt();
 	try {
 	    th.join(5000);
