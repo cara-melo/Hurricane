@@ -873,6 +873,7 @@ public class UI {
     }
 
     public void msg(Notice msg) {
+	sessalert();
 	dispatch(root, new NoticeEvent(msg));
     }
 
@@ -1008,6 +1009,7 @@ public class UI {
     }
 
 	public void globalSfxPlay(Audio.CS clip) {
+		sessalert();
 		audio.sys.mixer.add(clip);
 	}
 
