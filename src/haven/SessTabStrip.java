@@ -10,21 +10,37 @@ public class SessTabStrip extends Widget {
     public static final Text.Foundry font = new Text.Foundry(Text.dfont, 11).aa(true);
     public static final Coord pad = UI.scale(new Coord(6, 2));
     public static final int gap = UI.scale(3);
+    /* Espessura da pega de arrastar: o resto da barra é todo botão, portanto
+     * arrastar precisa de um sítio próprio onde clicar. */
+    public static final int gripsz = UI.scale(7);
+    private static final Coord closesz = UI.scale(new Coord(10, 10));
+    private static final Coord addsz = UI.scale(new Coord(14, 14));
     private static final Color bg = new Color(0, 0, 0, 160);
     private static final Color fbg = new Color(32, 64, 32, 200);
     private static final Color frame = new Color(120, 160, 120, 255);
     private static final Color alertc = new Color(255, 205, 0, 255);
     private static final Color errorc = new Color(255, 80, 80, 255);
     private static final Color closec = new Color(220, 120, 120, 255);
+    private static final Color gripc = new Color(150, 150, 150, 255);
     /* Fica por cima de tudo: widgets novos entram com z 0 e são inseridos antes
      * deste, tanto para desenho quanto para clique. */
     public static final int zorder = 10000;
     public static boolean show = Utils.getprefb("sesstabs", true);
+    public static boolean vertical = Utils.getprefb("sesstabsvert", false);
+    /* Estáticos porque cada sessão tem a sua barra na raiz da própria UI:
+     * arrastar uma tem de mover todas, e a pref é uma só. Nulo quer dizer "sem
+     * posição escolhida", que é o centro do topo, como era antes de a barra ser
+     * móvel. */
+    private static Coord pos = Utils.getprefc("sesstabspos", null);
 
     private final SessionSet set;
     private List<Item> items = new ArrayList<>();
     private Area addbtn = Area.sized(Coord.z, Coord.z);
+    private Area grip = Area.sized(Coord.z, Coord.z);
     private String layoutid = null;
+    private boolean layoutvert = false;
+    private UI.Grab dragging = null;
+    private Coord doff = Coord.z;
 
     private static class Item {
 	final SessionTab tab;
@@ -56,22 +72,46 @@ public class SessTabStrip extends Widget {
     }
 
     private void layout() {
+	boolean vert = vertical;
 	List<Item> items = new ArrayList<>();
-	int x = 0, h = 0;
+	int lw = 0, lh = 0;
 	for(SessionTab tab : set.tabs()) {
 	    Color col = (tab.error() != null) ? errorc : (tab.alert() ? alertc : Color.WHITE);
 	    Item item = new Item(tab, font.render(tab.display(), col));
-	    Coord isz = item.label.sz().add(pad.mul(2)).add(UI.scale(14), 0);
-	    item.area = Area.sized(new Coord(x, 0), isz);
-	    item.close = Area.sized(new Coord(x + isz.x - UI.scale(12), pad.y), UI.scale(new Coord(10, 10)));
 	    items.add(item);
-	    x += isz.x + gap;
-	    h = Math.max(h, isz.y);
+	    lw = Math.max(lw, item.label.sz().x);
+	    lh = Math.max(lh, item.label.sz().y);
 	}
-	Coord asz = UI.scale(new Coord(14, 14));
-	addbtn = Area.sized(new Coord(x, 0), asz);
-	x += asz.x;
-	h = Math.max(h, asz.y);
+	/* Altura de uma aba: igual nos dois modos, para trocar de orientação não
+	 * mudar o tamanho do texto nem a posição do x de fechar. */
+	int ih = Math.max(lh, closesz.y) + (pad.y * 2);
+	Coord sz;
+	if(vert) {
+	    /* Todas as abas com a mesma largura: empilhadas, larguras diferentes
+	     * dariam uma coluna serrilhada. */
+	    int w = Math.max(lw + (pad.x * 2) + UI.scale(14), addsz.x);
+	    grip = Area.sized(Coord.z, new Coord(w, gripsz));
+	    int y = gripsz + gap;
+	    for(Item item : items) {
+		item.area = Area.sized(new Coord(0, y), new Coord(w, ih));
+		item.close = Area.sized(new Coord(w - UI.scale(12), y + ((ih - closesz.y) / 2)), closesz);
+		y += ih + gap;
+	    }
+	    addbtn = Area.sized(new Coord((w - addsz.x) / 2, y), addsz);
+	    sz = new Coord(w, y + addsz.y);
+	} else {
+	    int h = Math.max(ih, addsz.y);
+	    grip = Area.sized(Coord.z, new Coord(gripsz, h));
+	    int x = gripsz + gap;
+	    for(Item item : items) {
+		int w = item.label.sz().x + (pad.x * 2) + UI.scale(14);
+		item.area = Area.sized(new Coord(x, 0), new Coord(w, ih));
+		item.close = Area.sized(new Coord(x + w - UI.scale(12), (ih - closesz.y) / 2), closesz);
+		x += w + gap;
+	    }
+	    addbtn = Area.sized(new Coord(x, 0), addsz);
+	    sz = new Coord(x + addsz.x, h);
+	}
 	/* Os Text que saem levam uma textura de GPU cada um e não há finalizador
 	 * nenhum a apanhá-los. Não é detalhe: cada aba tem a sua barra, todas
 	 * refazem o layout quando o rótulo ou o alerta de qualquer aba muda, e a
@@ -81,39 +121,64 @@ public class SessTabStrip extends Widget {
 	    old.label.dispose();
 	this.items = items;
 	this.layoutid = id();
-	resize(new Coord(x, h));
-	recenter();
+	this.layoutvert = vert;
+	resize(sz);
+	place();
     }
 
-    private void recenter() {
-	if(parent != null)
-	    this.c = new Coord(Math.max(0, (parent.sz.x - sz.x) / 2), 0);
+    /* Presa dentro da janela: uma resolução menor que a de quando a posição foi
+     * guardada não pode deixar a barra fora do ecrã, e a barra vertical cresce
+     * para baixo a cada aba nova. */
+    private Coord clip(Coord c) {
+	return(new Coord(Utils.clip(c.x, 0, Math.max(0, parent.sz.x - sz.x)),
+			 Utils.clip(c.y, 0, Math.max(0, parent.sz.y - sz.y))));
     }
 
-    /* layout() corre no construtor, quando parent ainda é nulo e recenter() não
-     * tem por onde se guiar; added() é o primeiro momento em que a barra sabe a
-     * largura da raiz. Sem isto ela nasce encostada à esquerda e só se centra
+    private void place() {
+	if(parent == null)
+	    return;
+	Coord p = pos;
+	if(p == null)
+	    /* Sem posição escolhida: a barra horizontal fica onde sempre esteve,
+	     * centrada no topo; a coluna encosta à esquerda, que é onde uma
+	     * coluna alta estorva menos. */
+	    p = layoutvert ? Coord.z : new Coord((parent.sz.x - sz.x) / 2, 0);
+	this.c = clip(p);
+    }
+
+    /* layout() corre no construtor, quando parent ainda é nulo e place() não tem
+     * por onde se guiar; added() é o primeiro momento em que a barra sabe a
+     * largura da raiz. Sem isto ela nasce encostada à esquerda e só se acerta
      * quando um rótulo muda ou a janela é redimensionada. */
     protected void added() {
 	super.added();
-	recenter();
+	place();
     }
 
     public void dispose() {
 	super.dispose();
+	if(dragging != null) {
+	    dragging.remove();
+	    dragging = null;
+	}
 	for(Item item : items)
 	    item.label.dispose();
 	items = new ArrayList<>();
     }
 
     public void presize() {
-	recenter();
+	place();
     }
 
     public void tick(double dt) {
 	super.tick(dt);
-	if(!Utils.eq(layoutid, id()))
+	if((vertical != layoutvert) || !Utils.eq(layoutid, id()))
 	    layout();
+	else if(dragging == null)
+	    /* Todo o tick, e não só quando algo muda: a posição é estática e
+	     * partilhada, portanto é assim que a barra das outras sessões
+	     * acompanha um arrasto feito na sessão em foco. */
+	    place();
     }
 
     private void cross(GOut g, Area a) {
@@ -121,9 +186,25 @@ public class SessTabStrip extends Widget {
 	g.line(new Coord(a.br.x - 1, a.ul.y), new Coord(a.ul.x, a.br.y - 1), 1);
     }
 
+    private void drawgrip(GOut g) {
+	g.chcolor(bg);
+	g.frect(grip.ul, grip.sz());
+	g.chcolor(frame);
+	g.rect(grip.ul, grip.sz());
+	g.chcolor(gripc);
+	Coord mid = grip.ul.add(grip.sz().div(2));
+	Coord dot = UI.scale(new Coord(2, 2));
+	for(int i = -1; i <= 1; i++) {
+	    Coord d = layoutvert ? new Coord(mid.x + (i * UI.scale(4)), mid.y) : new Coord(mid.x, mid.y + (i * UI.scale(4)));
+	    g.frect(d.sub(dot.div(2)), dot);
+	}
+	g.chcolor();
+    }
+
     public void draw(GOut g) {
 	if(!show)
 	    return;
+	drawgrip(g);
 	for(Item item : items) {
 	    g.chcolor(set.isfocused(item.tab) ? fbg : bg);
 	    g.frect(item.area.ul, item.area.sz());
@@ -145,8 +226,24 @@ public class SessTabStrip extends Widget {
 	g.chcolor();
     }
 
+    private void startdrag(Coord c) {
+	if(dragging != null)
+	    dragging.remove();
+	dragging = ui.grabmouse(this);
+	doff = c;
+    }
+
     public boolean mousedown(MouseDownEvent ev) {
-	if(!show || (ev.b != 1))
+	if(!show)
+	    return(false);
+	/* Botão do meio em qualquer ponto da barra também arrasta, como nos
+	 * outros widgets móveis do cliente: com as abas todas cheias de botões,
+	 * a pega sozinha é um alvo pequeno. */
+	if((ev.b == 2) || ((ev.b == 1) && grip.contains(ev.c))) {
+	    startdrag(ev.c);
+	    return(true);
+	}
+	if(ev.b != 1)
 	    return(false);
 	for(Item item : items) {
 	    if(item.close.contains(ev.c)) {
@@ -165,9 +262,30 @@ public class SessTabStrip extends Widget {
 	return(false);
     }
 
+    public void mousemove(MouseMoveEvent ev) {
+	if(dragging != null) {
+	    pos = clip(this.c.add(ev.c).sub(doff));
+	    this.c = pos;
+	    return;
+	}
+	super.mousemove(ev);
+    }
+
+    public boolean mouseup(MouseUpEvent ev) {
+	if(dragging != null) {
+	    dragging.remove();
+	    dragging = null;
+	    Utils.setprefc("sesstabspos", pos);
+	    return(true);
+	}
+	return(super.mouseup(ev));
+    }
+
     public Object tooltip(Coord c, Widget prev) {
 	if(!show)
 	    return(null);
+	if(grip.contains(c))
+	    return("Drag to move the session tabs");
 	for(Item item : items) {
 	    if(item.close.contains(c))
 		return("Log out " + item.tab.display());
