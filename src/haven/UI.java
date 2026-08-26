@@ -52,7 +52,13 @@ public class UI {
     public Receiver rcvr;
     public Coord mc = Coord.z, lcc = Coord.z;
     public Session sess;
-    public boolean modshift, modctrl, modmeta, modsuper;
+    public volatile SessionTab tab = null;
+    /* Voláteis em vez de guardados pelo monitor da UI: clearmods() é chamado
+     * com o monitor do SessionSet na mão, e pegar no monitor da UI a partir
+     * dali fecharia um ciclo com a thread de render, que faz o contrário --
+     * dispatch() corre dentro de synchronized(ui) e os cliques na barra de
+     * abas entram no SessionSet a partir de lá. */
+    public volatile boolean modshift, modctrl, modmeta, modsuper;
     public Object lasttip;
     public double lastevent, lasttick;
     public Widget mouseon;
@@ -66,8 +72,8 @@ public class UI {
 	public GameUI gui = null;
 	private final Object guiLock = new Object();
 	public int lastWidgetID = 0;
-	public static Tex province = null;
-	public static Tex realm = null;
+	public Tex province = null;
+	public Tex realm = null;
 
     {
 	lastevent = lasttick = Utils.rtime();
@@ -100,12 +106,42 @@ public class UI {
     }
 
     public void setgprefs(GSettings prefs) {
+	boolean changed = false;
 	synchronized(this) {
 	    if(!Utils.eq(prefs, this.gprefs)) {
 		this.gprefs = prefs;
 		gprefsdirty = true;
+		changed = true;
 	    }
 	}
+	if(changed) {
+	    SessionTab tab = this.tab;
+	    if(tab != null)
+		tab.set.spreadgprefs(this, prefs);
+	}
+    }
+
+    /* Aplicar uma configuração gráfica vinda de outra aba: sem marcar sujo,
+     * porque a aba que originou a mudança já grava as prefs. */
+    public void setgprefsq(GSettings prefs) {
+	synchronized(this) {
+	    this.gprefs = prefs;
+	}
+    }
+
+    /* Algo aconteceu nesta UI: se ela não está em foco, a aba dela acende. */
+    public void sessalert() {
+	SessionTab tab = this.tab;
+	if(tab != null)
+	    tab.set.alert(tab);
+    }
+
+    /* Ao perder o foco: soltar os modificadores, para a sessão que sai não
+     * ficar achando que shift/ctrl/alt continuam pressionados. Botão de mouse
+     * segurado não é tratado -- movimento em H&H é por clique. Sem lock
+     * nenhum, de propósito: ver o comentário dos campos. */
+    public void clearmods() {
+	modshift = modctrl = modmeta = modsuper = false;
     }
 
     private class WidgetConsole extends Console {
@@ -841,6 +877,7 @@ public class UI {
     }
 
     public void msg(Notice msg) {
+	sessalert();
 	dispatch(root, new NoticeEvent(msg));
     }
 
@@ -906,6 +943,14 @@ public class UI {
 	dispatch(root, new Widget.MouseMoveEvent(c));
     }
 
+    /* Movimento sem evento de sistema por trás: serve para dizer a uma UI que
+     * acaba de entrar em foco onde é que o rato está, sem lhe mexer nos
+     * modificadores, que são os dela e não os do evento antigo. */
+    public void mousemove(Coord c) {
+	mc = c;
+	dispatch(root, new Widget.MouseMoveEvent(c));
+    }
+
     public void mousehover(Coord c) {
 	dispatch(root, new Widget.MouseHoverEvent(c));
     }
@@ -953,9 +998,13 @@ public class UI {
 	return(env);
     }
 
+    private boolean destroyed = false;
+    public boolean destroyed() {return(destroyed);}
+
     public void destroy() {
 	queue.drain();
 	synchronized(this) {
+	    destroyed = true;
 	    root.destroy();
 	    audio.clear();
 	}
@@ -972,6 +1021,7 @@ public class UI {
     }
 
 	public void globalSfxPlay(Audio.CS clip) {
+		sessalert();
 		audio.sys.mixer.add(clip);
 	}
 

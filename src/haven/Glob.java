@@ -53,6 +53,11 @@ public class Glob {
     public double skyblend = 0.0;
     private final Map<String, CAttr> cattr = new HashMap<String, CAttr>();
     private Map<Indir<Resource>, Object> wmap = new HashMap<Indir<Resource>, Object>();
+    /* Que gobs já dispararam alarme nesta sessão. Era estático no Gob; com
+     * várias sessões abertas cada uma tem de ter o seu, senão um alt cala os
+     * alarmes do outro por colisão de id. Morre com a sessão, o que torna o
+     * clear() da tela de login desnecessário. */
+    public final Set<Long> alarmPlayed = Collections.synchronizedSet(new HashSet<Long>());
 	public String mservertime;
 	public String lservertime;
 	public String rservertime;

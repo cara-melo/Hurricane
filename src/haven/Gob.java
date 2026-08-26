@@ -103,7 +103,6 @@ public class Gob implements RenderTree.Node, Sprite.Owner, Skeleton.ModOwner, Eq
 	public static final ScheduledExecutorService gobDeathExecutor = Executors.newSingleThreadScheduledExecutor();
 	private static Future<?> gobDeathFuture;
 	private Overlay gobChaseVector = null;
-	public static final HashSet<Long> alarmPlayed = new HashSet<Long>();
 	public Overlay combatFoeCircleOverlay = null;
 	public static Set<Long> permanentHighlightList = new HashSet<>();
 	private GobDamageInfo damage;
@@ -1281,9 +1280,9 @@ public class Gob implements RenderTree.Node, Sprite.Owner, Skeleton.ModOwner, Eq
 				try {
 					initComp((Composite)getattr(Drawable.class));
 					isComposite = true;
-					if(!alarmPlayed.contains(id)) {
+					if(!glob.alarmPlayed.contains(id)) {
 						if(AlarmManager.play(res.name, Gob.this)){
-							alarmPlayed.add(id);
+							glob.alarmPlayed.add(id);
 						}
 					}
 				} catch (Loading e) {
@@ -1294,9 +1293,9 @@ public class Gob implements RenderTree.Node, Sprite.Owner, Skeleton.ModOwner, Eq
 					}
 				}
 			} else {
-				if(!alarmPlayed.contains(id)) {
+				if(!glob.alarmPlayed.contains(id)) {
 					if(AlarmManager.play(res.name, Gob.this))
-						alarmPlayed.add(id);
+						glob.alarmPlayed.add(id);
 				}
 			}
 			if (res.name.startsWith("gfx/terobjs/barrel") && barrelContentsGobInfo == null) {
@@ -2367,7 +2366,7 @@ public class Gob implements RenderTree.Node, Sprite.Owner, Skeleton.ModOwner, Eq
 	}
 
 	public void playPlayerAlarm() {
-		if (!alarmPlayed.contains(id)){
+		if (!glob.alarmPlayed.contains(id)){
 			if (getres() != null) {
 				if (isMannequin != null && !isMannequin && isSkeleton != null && !isSkeleton){
 					if (getres().name.equals("gfx/borka/body")) {
@@ -2422,7 +2421,7 @@ public class Gob implements RenderTree.Node, Sprite.Owner, Skeleton.ModOwner, Eq
 					AudioInputStream pcmStream = AudioSystem.getAudioInputStream(tgtFormat, in);
 					Audio.CS klippi = new Audio.PCMClip(pcmStream, 2, 2);
                     glob.sess.ui.globalSfxPlay(new Audio.VolAdjust(klippi, val / 50.0));
-					alarmPlayed.add(id);
+					glob.alarmPlayed.add(id);
 				}
 			} catch (Exception ignored) {
 			}

@@ -36,7 +36,23 @@ public class RootWidget extends ConsoleHost implements UI.Notice.Handler, Widget
     private Text lastmsg;
     private double msgtime;
 	public static final Resource defaultCursor = Resource.local().loadwait("gfx/hud/curs/arw");
-	
+
+	/* Ctrl+Tab não colide com o Tab do fgt-cycle: forcode casa o modificador
+	 * exato. Ir direto à sessão N nasce sem tecla, como as barras de ação 2 a 5,
+	 * porque Alt+dígito costuma estar ocupado por elas. */
+	public static final KeyBinding kb_sessnext = KeyBinding.get("sess/next", KeyMatch.forcode(java.awt.event.KeyEvent.VK_TAB, KeyMatch.C));
+	public static final KeyBinding kb_sessprev = KeyBinding.get("sess/prev", KeyMatch.forcode(java.awt.event.KeyEvent.VK_TAB, KeyMatch.C | KeyMatch.S));
+	public static final KeyBinding kb_sessnew = KeyBinding.get("sess/new", KeyMatch.forcode(java.awt.event.KeyEvent.VK_T, KeyMatch.C));
+	public static final KeyBinding kb_sessclose = KeyBinding.get("sess/close", KeyMatch.nil);
+	public static final KeyBinding kb_sesstabs = KeyBinding.get("sess/tabs", KeyMatch.nil);
+	public static final KeyBinding[] kb_sessgo = {
+	    KeyBinding.get("sess/1", KeyMatch.nil), KeyBinding.get("sess/2", KeyMatch.nil),
+	    KeyBinding.get("sess/3", KeyMatch.nil), KeyBinding.get("sess/4", KeyMatch.nil),
+	    KeyBinding.get("sess/5", KeyMatch.nil), KeyBinding.get("sess/6", KeyMatch.nil),
+	    KeyBinding.get("sess/7", KeyMatch.nil), KeyBinding.get("sess/8", KeyMatch.nil),
+	    KeyBinding.get("sess/9", KeyMatch.nil),
+	};
+
     public RootWidget(UI ui, Coord sz) {
 	super(ui, new Coord(0, 0), sz);
 	setfocusctl(true);
@@ -55,6 +71,34 @@ public class RootWidget extends ConsoleHost implements UI.Notice.Handler, Widget
     public boolean globtype(GlobKeyEvent ev) {
 	if(ev.propagate(this))
 	    return(true);
+	SessionSet sessions = (ui.tab == null) ? null : ui.tab.set;
+	if(sessions != null) {
+	    if(kb_sessnext.key().match(ev)) {
+		sessions.cycle(1);
+		return(true);
+	    } else if(kb_sessprev.key().match(ev)) {
+		sessions.cycle(-1);
+		return(true);
+	    } else if(kb_sessnew.key().match(ev)) {
+		sessions.newtab();
+		return(true);
+	    } else if(kb_sessclose.key().match(ev)) {
+		SessionTab tab = sessions.focused();
+		if(tab != null)
+		    SessCloseWnd.open(ui, tab);
+		return(true);
+	    } else if(kb_sesstabs.key().match(ev)) {
+		SessTabStrip.show = !SessTabStrip.show;
+		Utils.setprefb("sesstabs", SessTabStrip.show);
+		return(true);
+	    }
+	    for(int i = 0; i < kb_sessgo.length; i++) {
+		if(kb_sessgo[i].key().match(ev)) {
+		    sessions.select(i);
+		    return(true);
+		}
+	    }
+	}
 	if(ev.c == '`') {
 	    if(UILoop.profile.get()) {
 		add(new Profwnd(guprof, "UI profile"), UI.scale(100, 100));
@@ -136,7 +180,10 @@ public class RootWidget extends ConsoleHost implements UI.Notice.Handler, Widget
 	    int a = 0;
 	    Indir<Resource> resid = (args.length > a) ? ui.sess.getresv(args[a++]) : null;
 	    boolean loop = (args.length > a) ? Utils.bv(args[a++]) : false;
-	    if(Music.enabled) {
+	    /* Só a sessão em foco manda na música. Uma aba de fundo que muda de
+	     * zona não pode trocar a música de quem está a jogar; ao ganhar o
+	     * foco a próxima mensagem de bgm põe as coisas no sítio. */
+	    if(Music.enabled && ((ui.tab == null) || ui.tab.set.isfocused(ui.tab))) {
 		if(resid == null)
 		    Music.play(null, false);
 		else

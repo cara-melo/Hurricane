@@ -40,15 +40,28 @@ public abstract class UILoop implements Console.Directory {
     public static final Config.Variable<Boolean> profile = Config.Variable.propb("haven.profile", false);
     public final Windeye wnd;
     public final Thread th;
+    private final Thread reapth;
     public final CPUProfile uprof = new CPUProfile(300), rprof = new CPUProfile(300);
     public final GPUProfile gprof = new GPUProfile(300);
     public Environment env;
-    public UI ui;
+    public UI ui;		/* a UI da aba em foco */
+    /* Nulo no caminho de sessão única (replay, -servargs). */
+    public SessionSet sessions = null;
+    /* Qual aba está em foco, guardado por uilock. Existe para o uilock nunca
+     * precisar de perguntar nada ao SessionSet: a ordem de locks do cliente é
+     * SessionSet primeiro, uilock depois, e uma pergunta daqui para lá fecharia
+     * o ciclo. */
+    private SessionTab focustab = null;
     private final Cursor.Caps curscaps;
     private final Object uilock = new Object();
     private UI lockedui;
     private long frameno = 0;
     public static boolean showFramerate = Utils.getprefb("showFramerate", true);
+    /* Quantas vezes por segundo as sessões fora de foco são tickadas. 30 é o
+     * suficiente para chat, alarme, timers e automação; o personagem em foco
+     * continua no framerate cheio. Limitado porque um valor <= 0 nas prefs daria
+     * um intervalo infinito e a thread dormiria para sempre. */
+    public static double bghz = Math.min(Math.max(Utils.getprefd("sessbghz", 30.0), 1.0), 144.0);
 
     public UILoop(Windeye wnd) {
 	this.wnd = wnd;
@@ -57,6 +70,9 @@ public abstract class UILoop implements Console.Directory {
 	this.curscaps = wnd.toolkit().cursorcaps();
 	newui(null);
 	this.th = new HackThread(this::run, "Haven UI thread");
+	this.reapth = new HackThread(this::reaploop, "Haven ui reaper thread");
+	this.reapth.setDaemon(true);
+	this.reapth.start();
     }
 
     public void start() {
@@ -80,17 +96,34 @@ public abstract class UILoop implements Console.Directory {
 
     private Audio.Root audio = null;
     public UI newui(UI.Runner fun) {
+	return(newui(fun, null));
+    }
+
+    public UI newui(UI.Runner fun, SessionTab tab) {
 	if(audio == null)
 	    audio = new Audio.Root(audiosink());
 	UI prevui, newui = new UI(wnd, audio, new Coord(wnd.size()), fun);
 	newui.env = this.env;
 	newui.cons.add(this);
+	newui.tab = tab;
+	newui.root.guprof = uprof;
+	newui.root.grprof = rprof;
+	newui.root.ggprof = gprof;
+	if(sessions != null)
+	    newui.root.add(new SessTabStrip(sessions), Coord.z);
 	synchronized(uilock) {
-	    prevui = this.ui;
-	    this.ui = newui;
-	    ui.root.guprof = uprof;
-	    ui.root.grprof = rprof;
-	    ui.root.ggprof = gprof;
+	    prevui = (tab == null) ? this.ui : tab.ui;
+	    if(tab != null)
+		tab.ui = newui;
+	    /* focustab em vez de sessions.isfocused: ver o comentário do campo.
+	     * Comparar com o campo também resolve a ordem no arranque -- a
+	     * primeira aba pode chegar aqui antes de o Client chamar focus(), e
+	     * nesse caso é o focus() que adota esta UI. */
+	    if((tab == null) || (tab == focustab))
+		this.ui = newui;
+	    /* Esperar a thread de render largar a UI que vai morrer. Se ela
+	     * não estava em foco, lockedui nunca é igual a prevui e a espera
+	     * não acontece. */
 	    while((this.lockedui != null) && (this.lockedui == prevui)) {
 		try {
 		    uilock.wait();
@@ -100,10 +133,165 @@ public abstract class UILoop implements Console.Directory {
 		}
 	    }
 	}
-	if(prevui != null) {
+	if(prevui != null)
 	    prevui.destroy();
-	}
 	return(newui);
+    }
+
+    /* Passar a desenhar a UI desta aba. A troca vale a partir do próximo frame:
+     * a thread de render lê this.ui no começo de cada ciclo. Chamado sempre com
+     * o monitor do SessionSet na mão (é ele que serializa as trocas de foco);
+     * marcar focustab mesmo quando a aba ainda não tem UI é o que faz o newui
+     * seguinte adotá-la. */
+    public void focus(SessionTab tab) {
+	UI prev, next;
+	synchronized(uilock) {
+	    focustab = tab;
+	    prev = this.ui;
+	    next = (tab == null) ? null : tab.ui;
+	    if(next != null)
+		this.ui = next;
+	}
+	if((prev != null) && (next != null) && (prev != next))
+	    prev.clearmods();
+    }
+
+    /* A aba saiu: a UI dela vai para a fila e quem destrói é uma thread só para
+     * isso. Não pode ser aqui: discard é chamado a partir de um clique na barra,
+     * ou seja, de dentro da thread de render. E não pode ser a thread de render
+     * no frame seguinte: UI.destroy() começa por queue.drain(), que espera pelos
+     * comandos em voo -- um comando que levantou Loading fica na lista do Loader
+     * até o recurso chegar, e drain() nem sequer responde a interrupt. Fechar
+     * uma aba a meio de um carregamento congelaria o cliente inteiro. Se a UI
+     * que sai é a que está a ser desenhada, uma UI vazia entra no lugar na mesma
+     * hora. */
+    private final Collection<UI> dead = new ArrayList<>();
+
+    /* Construída fora do lock e reaproveitada: `new UI(...)` monta uma
+     * RootWidget, cujo inicializador de classe faz loadwait de um cursor, e um
+     * loadwait com o uilock na mão travava a thread de render no topo do frame.
+     * Uma instância só, que fica viva até o cliente fechar -- é uma UI vazia,
+     * não custa nada. */
+    private UI blank = null;
+    private UI blank() {
+	UI blank = this.blank;
+	if(blank == null) {
+	    if(audio == null)
+		audio = new Audio.Root(audiosink());
+	    blank = new UI(wnd, audio, new Coord(wnd.size()), null);
+	    blank.env = this.env;
+	    blank.cons.add(this);
+	    this.blank = blank;
+	}
+	return(blank);
+    }
+
+    public void discard(SessionTab tab) {
+	blank();		/* construída aqui, fora do lock */
+	synchronized(uilock) {
+	    UI old = tab.ui;
+	    tab.ui = null;
+	    if(old == null)
+		return;
+	    if(this.ui == old)
+		this.ui = this.blank;
+	    dead.add(old);
+	    uilock.notifyAll();
+	}
+    }
+
+    private Thread bgth = null;
+
+    /* Tudo menos desenhar: ctick do mundo e tick da UI. Sem gtick, sem
+     * display, sem entrada -- e sem resize, que o primeiro frame depois da
+     * troca de foco já faz. */
+    /* As duas condições dentro do monitor são o handshake com quem descarta
+     * UIs: destroy() marca destroyed dentro deste mesmo monitor, e discard()
+     * zera tab.ui. Sem elas, fechar uma aba enquanto a thread de fundo a ticka
+     * dispararia o tick numa árvore de widgets já destruída. */
+    private void bgtick(SessionTab tab, UI ui) {
+	synchronized(ui) {
+	    if(ui.destroyed() || (tab.ui != ui))
+		return;
+	    if(ui.sess != null)
+		ui.sess.glob.ctick();
+	    ui.tick();
+	}
+    }
+
+    private void bgloop() {
+	try {
+	    while(true) {
+		double start = Utils.rtime();
+		SessionSet sessions = this.sessions;
+		if(sessions != null) {
+		    for(SessionTab tab : sessions.tabs()) {
+			if(sessions.isfocused(tab))
+			    continue;
+			/* Saltar também a UI desenhada, e não só a aba em foco: o
+			 * SessionSet publica o foco novo antes de o UILoop trocar
+			 * this.ui, e nessa janela a aba que sai lia-se como fora de
+			 * foco enquanto a thread de render ainda a tickava. */
+			UI ui = tab.ui;
+			if((ui == null) || (ui == this.ui))
+			    continue;
+			try {
+			    bgtick(tab, ui);
+			} catch(Loading l) {
+			} catch(Throwable e) {
+			    /* Esta thread é a única que ticka as abas de fundo:
+			     * se morrer, chat, alarmes e timers de todas elas
+			     * calam-se em silêncio até o cliente fechar. */
+			    new Warning(e, "background session tick failed").issue();
+			}
+		    }
+		}
+		double left = (1.0 / bghz) - (Utils.rtime() - start);
+		if(left > 0)
+		    Thread.sleep((long)(left * 1000));
+	    }
+	} catch(InterruptedException e) {
+	}
+    }
+
+    public void startbg() {
+	if(bgth != null)
+	    throw(new IllegalStateException());
+	bgth = new HackThread(this::bgloop, "Haven background session thread");
+	bgth.start();
+    }
+
+    /* O mesmo handshake que o newui já usa: lockedui é a UI do frame em curso
+     * (fixada no topo de run()), portanto só se pode destruir uma UI depois de
+     * a thread de render ter começado um frame com outra. Como o discard já
+     * trocou this.ui, o frame seguinte serve. */
+    private void reaploop() {
+	try {
+	    while(true) {
+		UI ui = null;
+		synchronized(uilock) {
+		    while(ui == null) {
+			for(UI cand : dead) {
+			    if(cand != lockedui) {
+				ui = cand;
+				break;
+			    }
+			}
+			if(ui == null)
+			    uilock.wait();
+		    }
+		    dead.remove(ui);
+		}
+		try {
+		    ui.destroy();
+		} catch(Throwable e) {
+		    /* Esta thread é a única que destrói UIs: se morrer, nenhuma
+		     * aba fechada a seguir é libertada. */
+		    new Warning(e, "error destroying discarded ui").issue();
+		}
+	    }
+	} catch(InterruptedException e) {
+	}
     }
 
     /* XXX: Move to UI? */
@@ -584,6 +772,27 @@ public abstract class UILoop implements Console.Directory {
     }
 
     public void dispose() {
+	reapth.interrupt();
+	try {
+	    reapth.join(2000);
+	} catch(InterruptedException e) {
+	    Thread.currentThread().interrupt();
+	}
+	/* A thread reaper pode estar presa em UI.destroy() -> queue.drain(),
+	 * que espera pelos comandos em voo e não responde a interrupt. É
+	 * daemon, portanto não segura o encerramento; o aviso existe para o
+	 * caso não passar despercebido. */
+	if(reapth.isAlive())
+	    Warning.warn("ui reaper thread failed to terminate");
+	if(bgth != null) {
+	    bgth.interrupt();
+	    try {
+		bgth.join(2000);
+	    } catch(InterruptedException e) {
+		Thread.currentThread().interrupt();
+	    }
+	    bgth = null;
+	}
 	th.interrupt();
 	try {
 	    th.join(5000);

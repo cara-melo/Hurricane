@@ -45,6 +45,18 @@ public class Client implements Console.Directory {
     private final EventQueue queue = new EventQueue(this);
     private UILoop loop;
     private Thread mt;
+    public final SessionSet sessions = new SessionSet(new SessionSet.Host() {
+	    public void focus(SessionTab tab) {Client.this.focus(tab);}
+	    public void spawn() {Client.this.spawn();}
+	    public void closed(SessionTab tab) {
+		UILoop loop = Client.this.loop;
+		if(loop != null)
+		    loop.discard(tab);
+	    }
+	    public void empty() {Client.this.quit();}
+	});
+    private final Object shutdown = new Object();
+    private boolean closing = false;
     public static String gameDir = null;
     public static boolean runningThroughSteam = true;
 
@@ -93,6 +105,10 @@ public class Client implements Console.Directory {
 	public final Client cl;
 	private final List<Toolkit.Event> pending = new ArrayList<>();
 	private Toolkit.MouseMoveEvent mousemv;
+	/* Só a thread de render mexe nestes dois: são lidos e escritos dentro de
+	 * dispatch(), que corre no frame. */
+	private Coord lastmc = null;
+	private UI lastui = null;
 
 	public EventQueue(Client cl) {
 	    this.cl = cl;
@@ -137,7 +153,18 @@ public class Client implements Console.Directory {
 		evs = new ArrayList<>(pending);
 		pending.clear();
 	    }
+	    /* Trocar de aba não gera evento de rato nenhum, mas cada UI tem o seu
+	     * ui.mc -- e é dele que saem o cursor desenhado, o hover e o tooltip.
+	     * A UI que entra em foco tem o mc parado onde ficou da última vez, por
+	     * isso o cursor pisca para o que estava debaixo do rato na sessão
+	     * anterior e só acerta quando o jogador mexe no rato. Reenviar a última
+	     * posição conhecida fecha essa janela; vai sem evento de sistema para
+	     * não escrever modificadores velhos por cima dos da UI nova. */
+	    if((ui != lastui) && (mousemv == null) && (lastmc != null))
+		ui.mousemove(lastmc);
+	    lastui = ui;
 	    if(mousemv != null) {
+		lastmc = mousemv.wndc();
 		ui.mousemove(AWTCompat.mkawt(mousemv), mousemv.wndc());
 	    }
 	    for(Toolkit.Event ev : evs) {
@@ -174,8 +201,8 @@ public class Client implements Console.Directory {
 	    this.cl = cl;
 	}
 
-	public UI newui(UI.Runner fun) {
-	    UI ui = super.newui(fun);
+	public UI newui(UI.Runner fun, SessionTab tab) {
+	    UI ui = super.newui(fun, tab);
 	    ui.cons.add(cl);
 	    return(ui);
 	}
@@ -203,25 +230,155 @@ public class Client implements Console.Directory {
 		return(!wnd.focused());
 	    return(v == Windeye.Visibility.NONE);
 	}
+
+	protected void framedone(Frame f) {
+	    super.framedone(f);
+	    cl.titletick();
+	}
     }
 
     private UI newui(UI.Runner fun) {
 	return(loop.newui(fun));
     }
 
-    public class Main implements UI.Runner {
-	public UI.Runner run(UI ui) throws InterruptedException {
+    private void quit() {
+	synchronized(shutdown) {
+	    closing = true;
+	    shutdown.notifyAll();
+	}
+    }
+
+    private volatile SessionTab curtab = null;
+    private String curtitle = null;
+
+    private void title(SessionTab tab) {
+	String t = (tab == null) ? null : tab.display();
+	curtitle = t;
+	if((t == null) || t.equals(""))
+	    wnd.title("Hurricane (" + Config.clientVersion + ")");
+	else
+	    wnd.title("Hurricane (" + Config.clientVersion + ") \u2013 " + t);
+    }
+
+    /* O rótulo da aba em foco muda sem ninguém avisar -- entrar no mundo troca
+     * o nome da conta pelo do personagem -- e o título da janela tem de
+     * acompanhar. Uma comparação de string por frame, na thread de render, sem
+     * pegar em lock nenhum. */
+    void titletick() {
+	SessionTab tab = curtab;
+	String t = (tab == null) ? null : tab.display();
+	if(!Utils.eq(t, curtitle))
+	    title(tab);
+    }
+
+    /* Passou a ser a aba em foco: trocar a UI desenhada, o título, e reapontar
+     * os globais que só sabem de um jogador. Corre com o monitor do SessionSet
+     * na mão, portanto nada aqui pode bloquear. */
+    private void focus(SessionTab tab) {
+	UILoop loop = this.loop;
+	if(loop != null)
+	    loop.focus(tab);
+	curtab = tab;
+	UI ui = tab.ui;
+	GameUI gui = (ui == null) ? null : ui.gui;
+	Config.setPlayerName((gui == null) ? null : gui.chrid);
+	retarget(ui);
+    }
+
+    /* O automapper é global de um jogador só e segue o foco. Sem o campo
+     * `mapped`, cada clique numa aba derrubava e recriava os quatro executores
+     * do MappingClient; e sem o ramo do null, trocar para uma aba na tela de
+     * login deixava o mapeamento a seguir o glob da sessão anterior. */
+    private Glob mapped = null;
+    private void retarget(UI ui) {
+	Glob glob = ((ui == null) || (ui.sess == null)) ? null : ui.sess.glob;
+	if(glob == mapped)
+	    return;
+	mapped = glob;
+	if(glob == null)
+	    haven.automated.mapper.MappingClient.destroy();
+	else
+	    Config.initAutomapper(ui);
+    }
+
+    private void spawn() {
+	SessionTab tab = new SessionTab(sessions);
+	tab.th = new HackThread(() -> tabloop(tab), "Haven session thread");
+	sessions.add(tab);
+	tab.th.start();
+    }
+
+    /* A cadeia de runners que antes rodava na thread principal, agora uma por
+     * aba. Um runner que devolve null (logout) volta para a tela de login, como
+     * sempre foi; a aba só termina quando é fechada. */
+    private void tabloop(SessionTab tab) {
+	boolean drop = true;
+	try {
 	    UI.Runner fun = null;
 	    while(true) {
 		if(fun == null)
 		    fun = new Bootstrap();
-		String t= fun.title();
-		if(t == null)
-		    wnd.title("Hurricane (" + Config.clientVersion + ")");
-		else
-		    wnd.title("Hurricane (" + Config.clientVersion + ") \u2013 " + t);
-		fun = fun.run(newui(fun));
+		tab.runner = fun;
+		String t = fun.title();
+		tab.label((t == null) ? "login" : t);
+		/* O título da janela não se escreve aqui: quem o escreve é
+		 * titletick(), na thread de render, para wnd.title ter um dono
+		 * só em vez de um por aba. */
+		fun = fun.run(loop.newui(fun, tab));
 	    }
+	} catch(InterruptedException e) {
+	} catch(Throwable t) {
+	    /* Uma sessão que morre não derruba as outras: a aba fica na lista,
+	     * marcada, até o usuário fechar. */
+	    new Warning(t, "session failed").issue();
+	    tab.error(String.valueOf(t.getMessage() == null ? t : t.getMessage()));
+	    drop = false;
+	}
+	if(drop)
+	    sessions.remove(tab);
+    }
+
+    private void closeall() {
+	for(SessionTab tab : sessions.tabs()) {
+	    tab.close();
+	    Thread th = tab.th;
+	    if(th != null) {
+		try {
+		    th.join(2000);
+		} catch(InterruptedException e) {
+		    Thread.currentThread().interrupt();
+		    break;
+		}
+	    }
+	}
+    }
+
+    /* Caminho normal do cliente: abre a primeira aba e espera. O caminho de
+     * sessão única (replay, -servargs) continua em run(UI.Runner). */
+    public void runsessions() {
+	if(mt != null) throw(new IllegalStateException());
+	mt = Thread.currentThread();
+	UILoop loop = this.loop = new ClientLoop(this);
+	loop.sessions = sessions;
+	loop.start();
+	loop.startbg();
+	try {
+	    try {
+		sessions.newtab();
+		synchronized(shutdown) {
+		    while(!closing)
+			shutdown.wait();
+		}
+	    } catch(InterruptedException e) {
+	    } finally {
+		closeall();
+		newui(null);
+	    }
+	    savewndstate();
+	} finally {
+	    loop.dispose();
+	    this.loop = null;
+	    mt = null;
 	}
     }
 
@@ -301,7 +458,7 @@ public class Client implements Console.Directory {
 	    Client cl = new Client(Client.this.tk);
 	    Thread th = new HackThread(() -> {
 		try {
-		    cl.run(cl.new Main());
+		    cl.runsessions();
 		} finally {
 		    cl.dispose();
 		}
@@ -421,10 +578,11 @@ public class Client implements Console.Directory {
 		    System.err.println("hafen: " + e.getMessage());
 		    System.exit(1);
 		}
-	    } else {
-		main = cl.new Main();
 	    }
-	    cl.run(main);
+	    if(main != null)
+		cl.run(main);
+	    else
+		cl.runsessions();
 	} finally {
 	    cl.dispose();
 	}

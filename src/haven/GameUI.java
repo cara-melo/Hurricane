@@ -487,21 +487,21 @@ public class GameUI extends ConsoleHost implements Console.Directory, UI.Notice.
 					c.x = umpanel.c.x + umpanel.sz.x - UI.scale(10);
 				g.image(players, Coord.z);
 				g.image(pingtime, new Coord(0, players.sz().y));
-				if (UI.province != null && UI.realm != null) {
-					g.image(UI.province, new Coord(0, players.sz().y + pingtime.sz().y));
-					g.image(UI.realm, new Coord(0, players.sz().y + pingtime.sz().y + UI.province.sz().y));
+				if (ui.province != null && ui.realm != null) {
+					g.image(ui.province, new Coord(0, players.sz().y + pingtime.sz().y));
+					g.image(ui.realm, new Coord(0, players.sz().y + pingtime.sz().y + ui.province.sz().y));
 				}
 				int w = players.sz().x;
 				if (pingtime.sz().x > w)
 					w = pingtime.sz().x;
-				if (UI.province != null && UI.realm != null) {
-					if (UI.province.sz().x > w)
-						w = UI.province.sz().x;
-					if (UI.realm.sz().x > w)
-						w = UI.realm.sz().x;
+				if (ui.province != null && ui.realm != null) {
+					if (ui.province.sz().x > w)
+						w = ui.province.sz().x;
+					if (ui.realm.sz().x > w)
+						w = ui.realm.sz().x;
 				}
-				if (UI.province != null && UI.realm != null) {
-					this.sz = new Coord(w, players.sz().y + pingtime.sz().y + UI.province.sz().y + UI.realm.sz().y);
+				if (ui.province != null && ui.realm != null) {
+					this.sz = new Coord(w, players.sz().y + pingtime.sz().y + ui.province.sz().y + ui.realm.sz().y);
 				} else
 					this.sz = new Coord(w, players.sz().y + pingtime.sz().y);
 			}

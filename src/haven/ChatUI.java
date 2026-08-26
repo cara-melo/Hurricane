@@ -1703,6 +1703,8 @@ public class ChatUI extends Widget {
 
     private static final Resource notifsfx = Resource.local().loadwait("sfx/hud/chat");
     public void notify(Channel chan, Channel.Message msg, int urgency) {
+	if(ui != null)
+	    ui.sessalert();
 	if(urgency > 0) {
 	    synchronized(notifs) {
 		notifs.addFirst(new Notification(chan, msg));
