@@ -108,6 +108,14 @@ public class UI {
 	}
     }
 
+    /* Aplicar uma configuração gráfica vinda de outra aba: sem marcar sujo,
+     * porque a aba que originou a mudança já grava as prefs. */
+    public void setgprefsq(GSettings prefs) {
+	synchronized(this) {
+	    this.gprefs = prefs;
+	}
+    }
+
     private class WidgetConsole extends Console {
 	{
 	    setcmd("lo", new Command() {
