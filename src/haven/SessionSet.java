@@ -4,12 +4,22 @@ import java.util.*;
 
 /* Lista de sessões abertas e qual está em foco.
  *
- * Ordem de locks do cliente inteiro: monitor do SessionSet primeiro, uilock do
- * UILoop depois, nunca ao contrário. As chamadas ao Host acontecem com o
- * monitor na mão -- é o que garante que quem lê focused() e quem troca a UI
- * desenhada não se cruzam. Para a ordem valer, nada que já segure o uilock pode
- * perguntar nada a esta classe: é por isso que o UILoop guarda a aba em foco
- * num campo próprio (focustab) em vez de chamar isfocused(). */
+ * Ordem de locks do cliente inteiro: monitor da UI primeiro, monitor do
+ * SessionSet a seguir, uilock do UILoop depois, nunca ao contrário. A UI vem
+ * antes porque a thread de render roda dispatch(ui) dentro de synchronized(ui),
+ * portanto todo clique na barra de abas e toda tecla de sessão entram aqui já
+ * com o monitor da UI na mão. As chamadas ao Host acontecem com o monitor desta
+ * classe na mão -- é o que garante que quem lê focused() e quem troca a UI
+ * desenhada não se cruzam. Para a ordem valer, duas coisas:
+ *
+ *  - Nada que já segure o uilock pode perguntar nada a esta classe: é por isso
+ *    que o UILoop guarda a aba em foco num campo próprio (focustab) em vez de
+ *    chamar isfocused().
+ *  - Nada chamado de dentro daqui pode pegar no monitor de uma UI. É por isso
+ *    que UI.clearmods() não sincroniza. Sem essa regra, fechar a aba em foco e
+ *    clicar noutra antes de a thread dela desenrolar trava o cliente: a thread
+ *    de render espera por este monitor com o da UI na mão, e a thread da aba
+ *    espera pelo da UI com este na mão. */
 public class SessionSet {
     /* O lado que mexe em UI, render e globais. Implementado pelo Client; o
      * teste headless passa um stub. */
