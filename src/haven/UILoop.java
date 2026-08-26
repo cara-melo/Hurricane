@@ -228,13 +228,20 @@ public abstract class UILoop implements Console.Directory {
 		    for(SessionTab tab : sessions.tabs()) {
 			if(sessions.isfocused(tab))
 			    continue;
+			/* Saltar também a UI desenhada, e não só a aba em foco: o
+			 * SessionSet publica o foco novo antes de o UILoop trocar
+			 * this.ui, e nessa janela a aba que sai lia-se como fora de
+			 * foco enquanto a thread de render ainda a tickava. */
 			UI ui = tab.ui;
-			if(ui == null)
+			if((ui == null) || (ui == this.ui))
 			    continue;
 			try {
 			    bgtick(tab, ui);
 			} catch(Loading l) {
-			} catch(RuntimeException e) {
+			} catch(Throwable e) {
+			    /* Esta thread é a única que ticka as abas de fundo:
+			     * se morrer, chat, alarmes e timers de todas elas
+			     * calam-se em silêncio até o cliente fechar. */
 			    new Warning(e, "background session tick failed").issue();
 			}
 		    }
@@ -277,7 +284,9 @@ public abstract class UILoop implements Console.Directory {
 		}
 		try {
 		    ui.destroy();
-		} catch(RuntimeException e) {
+		} catch(Throwable e) {
+		    /* Esta thread é a única que destrói UIs: se morrer, nenhuma
+		     * aba fechada a seguir é libertada. */
 		    new Warning(e, "error destroying discarded ui").issue();
 		}
 	    }
@@ -764,6 +773,17 @@ public abstract class UILoop implements Console.Directory {
 
     public void dispose() {
 	reapth.interrupt();
+	try {
+	    reapth.join(2000);
+	} catch(InterruptedException e) {
+	    Thread.currentThread().interrupt();
+	}
+	/* A thread reaper pode estar presa em UI.destroy() -> queue.drain(),
+	 * que espera pelos comandos em voo e não responde a interrupt. É
+	 * daemon, portanto não segura o encerramento; o aviso existe para o
+	 * caso não passar despercebido. */
+	if(reapth.isAlive())
+	    Warning.warn("ui reaper thread failed to terminate");
 	if(bgth != null) {
 	    bgth.interrupt();
 	    try {

@@ -53,7 +53,12 @@ public class UI {
     public Coord mc = Coord.z, lcc = Coord.z;
     public Session sess;
     public volatile SessionTab tab = null;
-    public boolean modshift, modctrl, modmeta, modsuper;
+    /* Voláteis em vez de guardados pelo monitor da UI: clearmods() é chamado
+     * com o monitor do SessionSet na mão, e pegar no monitor da UI a partir
+     * dali fecharia um ciclo com a thread de render, que faz o contrário --
+     * dispatch() corre dentro de synchronized(ui) e os cliques na barra de
+     * abas entram no SessionSet a partir de lá. */
+    public volatile boolean modshift, modctrl, modmeta, modsuper;
     public Object lasttip;
     public double lastevent, lasttick;
     public Widget mouseon;
@@ -133,11 +138,10 @@ public class UI {
 
     /* Ao perder o foco: soltar os modificadores, para a sessão que sai não
      * ficar achando que shift/ctrl/alt continuam pressionados. Botão de mouse
-     * segurado não é tratado -- movimento em H&H é por clique. */
+     * segurado não é tratado -- movimento em H&H é por clique. Sem lock
+     * nenhum, de propósito: ver o comentário dos campos. */
     public void clearmods() {
-	synchronized(this) {
-	    modshift = modctrl = modmeta = modsuper = false;
-	}
+	modshift = modctrl = modmeta = modsuper = false;
     }
 
     private class WidgetConsole extends Console {
