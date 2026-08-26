@@ -751,6 +751,7 @@ public class OptWnd extends Window {
 	public static CheckBox disableMenuGridHotkeysCheckBox;
 	public static CheckBox alwaysOpenBeltOnLoginCheckBox;
 	public static CheckBox showMapMarkerNamesCheckBox;
+	public static CheckBox renameMapMarkersOnPlacementCheckBox;
 	public static CheckBox verticalContainerIndicatorsCheckBox;
 	public static boolean expWindowLocationIsTop = Utils.getprefb("expWindowLocationIsTop", true);
 	private static CheckBox showFramerateCheckBox;
@@ -855,7 +856,7 @@ public class OptWnd extends Window {
 			public void changed(boolean val) {
 				Utils.setprefb("showHoverInventoriesWhenHoldingShift", val);
 			}
-		}, leftColumn.pos("bl").adds(0, 12));
+		}, leftColumn.pos("bl").adds(0, 22));
 		leftColumn = add(showQuickSlotsCheckBox = new CheckBox("Enable Quick Slots Widget:"){
 			{a = (Utils.getprefb("showQuickSlotsBar", true));}
 			public void changed(boolean val) {
@@ -1062,6 +1063,13 @@ public class OptWnd extends Window {
 			}
 		}, rightColumn.pos("bl").adds(0, 2));
 		showMapMarkerNamesCheckBox.tooltip = showMapMarkerNamesTooltip;
+		rightColumn = add(renameMapMarkersOnPlacementCheckBox = new CheckBox("Rename New Markers in Compact Map"){
+			{a = (Utils.getprefb("renameMapMarkersOnPlacement", false));}
+			public void changed(boolean val) {
+				Utils.setprefb("renameMapMarkersOnPlacement", val);
+			}
+		}, rightColumn.pos("bl").adds(0, 2));
+		renameMapMarkersOnPlacementCheckBox.tooltip = renameMapMarkersOnPlacementTooltip;
 		rightColumn = add(verticalContainerIndicatorsCheckBox = new CheckBox("Vertical Container Indicators"){
 			{a = (Utils.getprefb("verticalContainerIndicators", true));}
 			public void changed(boolean val) {
@@ -3168,6 +3176,7 @@ public class OptWnd extends Window {
 	    y = addbtn(cont, "Options", GameUI.kb_opt, y);
 	    y = addbtn(cont, "Search actions", GameUI.kb_srch, y);
 	    y = addbtn(cont, "Focus chat window", GameUI.kb_chat, y);
+		y = addbtn(cont, "Crafting window", GameUI.kb_craft, y);
 //	    y = addbtn(cont, "Quick chat", ChatUI.kb_quick, y);
 //	    y = addbtn(cont, "Take screenshot", GameUI.kb_shoot, y);
 	    y = addbtn(cont, "Minimap icons", GameUI.kb_ico, y);
@@ -3359,7 +3368,7 @@ public class OptWnd extends Window {
 	public static CheckBox autoReloadCuriositiesFromInventoryCheckBox;
 	public static CheckBox preventTablewareFromBreakingCheckBox = null;
 	public static CheckBox autoDropLeechesCheckBox;
-	public static CheckBox autoEquipBunnySlippersPlateBootsCheckBox;
+	public static CheckBox autoSwitchBootsCheckBox;
 	public static CheckBox autoDropTicksCheckBox;
 	public static CheckBox autoPeaceAnimalsWhenCombatStartsCheckBox;
 	public static CheckBox preventUsingRawHideWhenRidingCheckBox;
@@ -3520,16 +3529,16 @@ public class OptWnd extends Window {
 					}
 				}
 			}, prev.pos("bl").adds(0, 2));
-			prev = add(autoEquipBunnySlippersPlateBootsCheckBox = new CheckBox("Auto-Equip Bunny Slippers/Plate Boots"){
-				{a = Utils.getprefb("autoEquipBunnySlippersPlateBoots", true);}
+			prev = add(autoSwitchBootsCheckBox = new CheckBox("Auto-Switch Bunny Slippers/Armor Boots"){
+				{a = Utils.getprefb("autoSwitchBoots", true);}
 				public void set(boolean val) {
-					Utils.setprefb("autoEquipBunnySlippersPlateBoots", val);
-					if (Equipory.autoEquipBunnySlippersPlateBootsCheckBox != null)
-						Equipory.autoEquipBunnySlippersPlateBootsCheckBox.a = val;
+					Utils.setprefb("autoSwitchBoots", val);
+					if (Equipory.autoSwitchBootsCheckBox != null)
+						Equipory.autoSwitchBootsCheckBox.a = val;
 					a = val;
 				}
 			}, prev.pos("bl").adds(0, 2));
-			autoEquipBunnySlippersPlateBootsCheckBox.tooltip = autoEquipBunnySlippersPlateBootsTooltip;
+			autoSwitchBootsCheckBox.tooltip = autoSwitchBootsTooltip;
 			prev = add(new Button(UI.scale(250), "Auto-Drop Manager", false, () -> {
 				if(!autoDropManagerWindow.attached) {
 					this.parent.parent.add(autoDropManagerWindow); // ND: this.parent.parent is root widget in login screen or gui in game.
@@ -3971,6 +3980,9 @@ public class OptWnd extends Window {
 	private Label nightVisionLabel;
 	public static HSlider nightVisionSlider;
 	private Button nightVisionResetButton;
+	public static Label groundRenderDistanceLabel;
+	public static HSlider groundRenderDistanceSlider;
+	private Button groundRenderDistanceResetButton;
 	public static CheckBox simplifiedCropsCheckBox;
 	public static CheckBox simplifiedForageablesCheckBox;
 	public static CheckBox hideFlavorObjectsCheckBox;
@@ -4042,6 +4054,24 @@ public class OptWnd extends Window {
 				}
 			}), leftColumn.pos("bl").adds(210, -20));
 			nightVisionResetButton.tooltip = resetButtonTooltip;
+			int groundRenderDistance = Utils.clip(Utils.getprefi("groundRenderDistance", 2), 1, 3);
+			leftColumn = add(groundRenderDistanceLabel = new Label("Ground Render Distance: " + groundRenderDistance), leftColumn.pos("bl").adds(0, 14));
+			leftColumn = add(groundRenderDistanceSlider = new HSlider(UI.scale(200), 2, 3, groundRenderDistance) {
+				public void changed() {
+					Utils.setprefi("groundRenderDistance", val);
+					groundRenderDistanceLabel.settext("Ground Render Distance: " + val);
+					if (ui != null && ui.gui != null && ui.gui.map != null)
+						ui.gui.map.setGroundRenderDistance(val);
+				}
+			}, leftColumn.pos("bl").adds(0, 6));
+			add(groundRenderDistanceResetButton = new Button(UI.scale(70), "Reset", false).action(() -> {
+				groundRenderDistanceSlider.val = 2;
+				groundRenderDistanceLabel.settext("Ground Render Distance: 2");
+				Utils.setprefi("groundRenderDistance", 2);
+				if (ui != null && ui.gui != null && ui.gui.map != null)
+					ui.gui.map.setGroundRenderDistance(2);
+			}), leftColumn.pos("bl").adds(210, -20));
+			groundRenderDistanceResetButton.tooltip = resetButtonTooltip;
 			leftColumn = add(flatWorldCheckBox = new CheckBox("Flat World"){
 				{a = Utils.getprefb("flatWorld", false);}
 				public void changed(boolean val) {
@@ -4052,7 +4082,7 @@ public class OptWnd extends Window {
 						ui.gui.optionInfoMsg("Flat World is now " + (val ? "ENABLED" : "DISABLED") + "!", (val ? msgGreen : msgRed), Audio.resclip(val ? Toggle.sfxon : Toggle.sfxoff));
 					}
 				}
-			}, leftColumn.pos("bl").adds(12, 8));
+			}, leftColumn.pos("bl").adds(12, 14));
 			flatWorldCheckBox.tooltip = flatWorldTooltip;
 			leftColumn = add(disableTileSmoothingCheckBox = new CheckBox("Disable Tile Smoothing"){
 				{a = Utils.getprefb("disableTileSmoothing", false);}
@@ -5317,6 +5347,7 @@ public class OptWnd extends Window {
 			"\n" +
 			"\n$col[185,185,185]{By default, Loftar saves the status of the belt at logout. So if you don't enable this setting, but leave the belt window open when you log out/exit the game, it will still open on login.}", UI.scale(300));
 	private static final Object showMapMarkerNamesTooltip = RichText.render("$col[185,185,185]{The marker names are NOT visible in compact mode.}", UI.scale(320));
+	private static final Object renameMapMarkersOnPlacementTooltip = RichText.render("Opens a rename window after manually placing a map marker in compact mode.", UI.scale(320));
 	private static final Object verticalContainerIndicatorsTooltip = RichText.render("Orientation for inventory container indicators." +
 			"\n" +
 			"\n$col[185,185,185]{For example, the amount of water in waterskins, seeds in a bucket, etc.}", UI.scale(230));
@@ -5521,7 +5552,7 @@ public class OptWnd extends Window {
 	private static final Object flowerMenuAutoSelectManagerTooltip = RichText.render("An advanced menu to automatically select specific flower menu options all the time. New options are added to the list as you discover them." +
 			"\n" +
 			"\n$col[185,185,185]{I don't recommend using this, but nevertheless it exists due to popular demand.}", UI.scale(300));
-	private static final Object autoEquipBunnySlippersPlateBootsTooltip = RichText.render("Switches your currently equipped shoes to Bunny Slippers when you right click to chase a rabbit, or Plate Boots if you click on anything else." +
+	private static final Object autoSwitchBootsTooltip = RichText.render("Switches your currently equipped shoes to Bunny Slippers when you right click to chase a rabbit, or the highest-priority available armor boots if you click on anything else." +
 			"\n" +
 			"\n$col[185,185,185]{I suggest always using this setting in PVP.}", UI.scale(300));
 	private static final Object autoPeaceAnimalsWhenCombatStartsTooltip = RichText.render("This will automatically set your status to 'Peace' when combat is initiated with a new target (animals only). " +

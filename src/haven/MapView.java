@@ -54,7 +54,7 @@ public class MapView extends PView implements DTarget, Console.Directory, PFList
     public long plgob = -1;
     public Coord2d cc;
     public final Glob glob;
-    private int view = 2;
+    private int view = OptWnd.groundRenderDistanceSlider.val;
     private Collection<Delayed> delayed = new LinkedList<Delayed>();
     private Collection<Delayed> delayed2 = new LinkedList<Delayed>();
     public Camera camera = restorecam();
@@ -76,6 +76,12 @@ public class MapView extends PView implements DTarget, Console.Directory, PFList
 	public Pathfinder pf;
 	public Thread pfthread;
 	private static final int MAX_TILE_RANGE = 40;
+	private static final List<String> ARMOR_BOOT_NAMES = Arrays.asList(
+			"Plate Boots",
+			"Armored Striders",
+			"Ranger's Boots",
+			"Leather Boots"
+	);
 	private AreaSelectCallback areaSelectCallback;
 	public boolean areaSelect = false;
 	public Coord currentCursorLocation;
@@ -615,6 +621,10 @@ public class MapView extends PView implements DTarget, Console.Directory, PFList
 	updatePlobCustomSizeAndRotation();
 	if (OptWnd.showWorkstationProgressCheckBox.a) updatePlobWorkstationProgressHighlight();
 	this.gobPathLastClick = null;
+    }
+
+    public void setGroundRenderDistance(int view) {
+	this.view = Utils.clip(view, 1, 3);
     }
     
     protected void envdispose() {
@@ -2439,13 +2449,13 @@ public class MapView extends PView implements DTarget, Console.Directory, PFList
 					}
 				}
 				if (clickb == 1) { // Left Click
-					if (OptWnd.autoEquipBunnySlippersPlateBootsCheckBox.a) {
-						switchToPlateBoots();
+					if (OptWnd.autoSwitchBootsCheckBox.a) {
+						switchToArmorBoots();
 					}
 				}
 				if (clickb == 3) { // Right Click
-					if (OptWnd.autoEquipBunnySlippersPlateBootsCheckBox.a) {
-						switchBunnySlippersAndPlateBoots(gob);
+					if (OptWnd.autoSwitchBootsCheckBox.a) {
+						switchBunnySlippersAndArmorBoots(gob);
 					}
 					if(checkpointManager != null && checkpointManagerThread != null){
 						checkpointManager.pauseIt();
@@ -2471,8 +2481,8 @@ public class MapView extends PView implements DTarget, Console.Directory, PFList
 			} else if (clickb == 1) { // Left Click
 				if (ui.gui.fv != null)
 					ui.gui.fv.currentChanged = false;
-				if (OptWnd.autoEquipBunnySlippersPlateBootsCheckBox.a) {
-					switchToPlateBoots();
+				if (OptWnd.autoSwitchBootsCheckBox.a) {
+					switchToArmorBoots();
 				}
 			}
             synchronized (Pathfinder.class) {
@@ -3059,12 +3069,12 @@ public class MapView extends PView implements DTarget, Console.Directory, PFList
 		return(Math.atan2(sloc[1] * a, sloc[0]));
 	}
 
-	public void switchBunnySlippersAndPlateBoots(Gob gob){
+	public void switchBunnySlippersAndArmorBoots(Gob gob){
 		try {
 			if (gob.getres().name.contains("/rabbit/")) {
 				switchToBunnySlippers();
 			} else {
-				switchToPlateBoots();
+				switchToArmorBoots();
 			}
 		} catch (Exception ignored) {
 		}
@@ -3085,18 +3095,22 @@ public class MapView extends PView implements DTarget, Console.Directory, PFList
 		}
 	}
 
-	public void switchToPlateBoots(){
+	public void switchToArmorBoots(){
 		WItem eqboots = ui.gui.getequipory().slots[15];
-        if (eqboots != null && eqboots.item.getname().equals("Plate Boots")) { // ND: Don't need to do anything if we have Plate Boots equipped
-            return;
-        }
-		List<WItem> invboots = ui.gui.maininv.getItemsExact("Plate Boots");
-		if (!invboots.isEmpty()) {
-			if (eqboots != null) {
-				eqboots.item.wdgmsg("transfer", new Coord(eqboots.sz.x / 2, eqboots.sz.y / 2));
+		String equippedBootsName = (eqboots == null) ? null : eqboots.item.getname();
+		for (String bootsName : ARMOR_BOOT_NAMES) {
+			if (bootsName.equals(equippedBootsName)) {
+				return;
 			}
-			WItem boots = invboots.get(0);
-			boots.item.wdgmsg("transfer", new Coord(boots.sz.x / 2, boots.sz.y / 2));
+			List<WItem> invboots = ui.gui.maininv.getItemsExact(bootsName);
+			if (!invboots.isEmpty()) {
+				if (eqboots != null) {
+					eqboots.item.wdgmsg("transfer", new Coord(eqboots.sz.x / 2, eqboots.sz.y / 2));
+				}
+				WItem boots = invboots.get(0);
+				boots.item.wdgmsg("transfer", new Coord(boots.sz.x / 2, boots.sz.y / 2));
+				return;
+			}
 		}
 	}
 
