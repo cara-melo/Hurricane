@@ -755,6 +755,7 @@ public class OptWnd extends Window {
 	public static CheckBox verticalContainerIndicatorsCheckBox;
 	public static boolean expWindowLocationIsTop = Utils.getprefb("expWindowLocationIsTop", true);
 	private static CheckBox showFramerateCheckBox;
+	private static CheckBox sessTabsCheckBox;
 	public static CheckBox snapWindowsBackInsideCheckBox;
 	public static CheckBox dragWindowsInWhenResizingCheckBox;
 	public static CheckBox showHoverInventoriesWhenHoldingShiftCheckBox;
@@ -814,6 +815,14 @@ public class OptWnd extends Window {
 			}
 		}, leftColumn.pos("bl").adds(0, 18));
 		showFramerateCheckBox.tooltip = showFramerateTooltip;
+		leftColumn = add(sessTabsCheckBox = new CheckBox("Show session tabs"){
+			{a = (Utils.getprefb("sesstabs", true));}
+			public void changed(boolean val) {
+				SessTabStrip.show = val;
+				Utils.setprefb("sesstabs", val);
+			}
+		}, leftColumn.pos("bl").adds(0, 2));
+		sessTabsCheckBox.tooltip = sessTabsTooltip;
 		leftColumn = add(snapWindowsBackInsideCheckBox = new CheckBox("Snap windows back when dragged out"){
 			{a = (Utils.getprefb("snapWindowsBackInside", true));}
 			public void changed(boolean val) {
@@ -3141,6 +3150,15 @@ public class OptWnd extends Window {
 	    y = addbtn(cont, "Log out", GameUI.kb_logout, y);
 	    y = addbtn(cont, "Switch character", GameUI.kb_switchchr, y);
 
+	    y = cont.adda(new Label("Sessions"), cont.sz.x / 2, y + UI.scale(10), 0.5, 0.0).pos("bl").adds(0, 5).y;
+	    y = addbtn(cont, "Next session", RootWidget.kb_sessnext, y);
+	    y = addbtn(cont, "Previous session", RootWidget.kb_sessprev, y);
+	    y = addbtn(cont, "New session", RootWidget.kb_sessnew, y);
+	    y = addbtn(cont, "Close session", RootWidget.kb_sessclose, y);
+	    y = addbtn(cont, "Show/hide session tabs", RootWidget.kb_sesstabs, y);
+	    for(int i = 0; i < RootWidget.kb_sessgo.length; i++)
+		y = addbtn(cont, String.format("Go to session %d", i + 1), RootWidget.kb_sessgo[i], y);
+
 	    y = cont.adda(new Label("Map buttons"), cont.sz.x / 2, y + UI.scale(10), 0.5, 0.0).pos("bl").adds(0, 5).y;
 		y = addbtn(cont, "Reset view", MapWnd.kb_home, y);
 		y = addbtn(cont, "Compact mode", MapWnd.kb_compact, y);
@@ -5274,6 +5292,7 @@ public class OptWnd extends Window {
 			"\n$col[185,185,185]{The default client pops it up in the middle of your screen, which can be annoying.}", UI.scale(300));
 
 	private static final Object showFramerateTooltip = RichText.render("Shows the current FPS in the top-right corner of the game window.", UI.scale(300));
+	private static final Object sessTabsTooltip = RichText.render("Shows the session tab strip at the top of the screen. With it hidden you can still switch sessions with the keybinds under Sessions.", UI.scale(300));
 	private static final Object snapWindowsBackInsideTooltip = RichText.render("This will cause most windows, that are not too large, to be fully snapped back into your game's window." +
 			"\nBy default, when you try to drag a window outside of your game window, it will only pop 25% of it back in." +
 			"\n" +
