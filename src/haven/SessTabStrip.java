@@ -72,6 +72,13 @@ public class SessTabStrip extends Widget {
 	addbtn = Area.sized(new Coord(x, 0), asz);
 	x += asz.x;
 	h = Math.max(h, asz.y);
+	/* Os Text que saem levam uma textura de GPU cada um e não há finalizador
+	 * nenhum a apanhá-los. Não é detalhe: cada aba tem a sua barra, todas
+	 * refazem o layout quando o rótulo ou o alerta de qualquer aba muda, e a
+	 * thread de fundo ticka-as a 30 Hz -- sem isto uma privada recebida com N
+	 * abas abertas deixa para trás da ordem de N² texturas. */
+	for(Item old : this.items)
+	    old.label.dispose();
 	this.items = items;
 	this.layoutid = id();
 	resize(new Coord(x, h));
@@ -90,6 +97,13 @@ public class SessTabStrip extends Widget {
     protected void added() {
 	super.added();
 	recenter();
+    }
+
+    public void dispose() {
+	super.dispose();
+	for(Item item : items)
+	    item.label.dispose();
+	items = new ArrayList<>();
     }
 
     public void presize() {

@@ -821,6 +821,10 @@ public class OptWnd extends Window {
 				SessTabStrip.show = val;
 				Utils.setprefb("sesstabs", val);
 			}
+			public void tick(double dt) {
+				super.tick(dt);
+				a = SessTabStrip.show;
+			}
 		}, leftColumn.pos("bl").adds(0, 2));
 		sessTabsCheckBox.tooltip = sessTabsTooltip;
 		leftColumn = add(snapWindowsBackInsideCheckBox = new CheckBox("Snap windows back when dragged out"){
