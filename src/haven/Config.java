@@ -44,7 +44,7 @@ public class Config {
     public static final Variable<Boolean> exp = Variable.propb("haven.experimental", false);
     public static final boolean windows = System.getProperty("os.name", "").startsWith("Windows");
     public final Properties localprops = getlocalprops(), userprops = getuserprops();
-	public static final String clientVersion = "v1.70";
+	public static final String clientVersion = "v1.71";
 	public static String githubLatestVersion = "Loading...";
 
     private static Config global = null;
@@ -480,6 +480,7 @@ public class Config {
 			"gfx/kritter/moonmoth/moonmoth",
 			"gfx/kritter/opiumdragon/opiumdragon",
 			"gfx/kritter/ptarmigan/ptarmigan",
+			"gfx/kritter/puffin/puffin",
 			"gfx/kritter/quail/quail",
 			"gfx/kritter/rat/rat",
 			"gfx/kritter/rockdove/rockdove",
